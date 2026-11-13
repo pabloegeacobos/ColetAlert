@@ -51,6 +51,7 @@
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="simple">
+<div id="pnlBar" style="display:none;position:sticky;top:0;z-index:50;padding:8px 12px;background:#0d1117;border-bottom:2px solid #30363d;font-size:15px;font-variant-numeric:tabular-nums"></div>
 <header>
   <h1>BTC Alertas</h1>
   <div><span class="price" id="price">—</span> <span id="chg" class="mut"></span></div>
@@ -115,6 +116,8 @@
       <div class="seg" id="ewTf"><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="30">30m</button><button data-tf="60" class="on">1h</button><button data-tf="120">2h</button><button data-tf="240">4h</button><button data-tf="720">12h</button><button data-tf="D">1D</button><button data-tf="W">1S</button></div>
       <button id="btnEw">Analizar ondas</button>
       <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewHist" checked> Estructura completa (grado mayor + ondas internas)</label>
+      <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="tmMine" checked> Mis compras/ventas</label>
+      <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="tmSig" checked> Señales de las estrategias</label>
       <label class="adv" style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewOwn"> Recuento propio de esta temporalidad</label>
       <select id="ewAlt" class="adv" style="min-width:260px"></select>
       <span id="ewMsg" class="small mut adv"></span>
@@ -1816,6 +1819,7 @@ document.querySelectorAll('#ewTf button').forEach(b => b.addEventListener('click
   document.querySelectorAll('#ewTf button').forEach(x => x.classList.remove('on')); b.classList.add('on'); EW.tf = b.dataset.tf; runElliott();
 }));
 $('btnEw').addEventListener('click', () => runElliott());
+['tmMine', 'tmSig'].forEach(id => $(id).addEventListener('change', () => renderElliott()));
 $('ewHist').addEventListener('change', () => renderElliott());
 $('ewOwn').addEventListener('change', () => renderElliott());
 $('ewAlt').addEventListener('change', () => { EW.sel = +$('ewAlt').value; renderElliott(); });
@@ -2066,6 +2070,48 @@ function sqzMom(c) { // LazyBear: regresión lineal de (cierre − media de (má
 }
 function macdH(c) { const cl = c.map(x => x.c), f = E.ema(cl, 12), s = E.ema(cl, 26), m = f.map((v, i) => v - s[i]), sg = E.ema(m.map(x => isNaN(x) ? 0 : x), 9); return m.map((v, i) => isNaN(v) || isNaN(sg[i]) ? null : v - sg[i]); }
 const TFSEC = { '5': 300, '15': 900, '30': 1800, '60': 3600, '120': 7200, '240': 14400, '720': 43200, 'D': 86400, 'W': 604800 };
+// ---- puntos de compra/venta en el gráfico: los tuyos (diario) y los de las estrategias ----
+function tradeMarks(all, markers, pl) {
+  const t0 = all[0].t, tEnd = all[all.length - 1].t;
+  const snap = t => { if (t < t0) return null; let lo = 0, hi = all.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (all[m].t <= t) lo = m; else hi = m - 1; } return tsec(all[lo].t); };
+  const add = (t, buy, text, color, size = 1) => { const tm = snap(t); if (tm != null) markers.push({ time: tm, position: buy ? 'belowBar' : 'aboveBar', color, shape: buy ? 'arrowUp' : 'arrowDown', text, size }); };
+  const showSig = !$('tmSig') || $('tmSig').checked, showMine = !$('tmMine') || $('tmMine').checked;
+  if (showMine) {
+    for (const o of POS.open) add(o.t, o.side === 1, `TÚ ${o.side === 1 ? 'COMPRA' : 'VENTA'} ${fmt(o.entry)}`, '#2f81f7', 1.6);
+    for (const x of POS.log) { const pnl = (x.exit - x.entry) * x.side * x.qty; add(x.t, x.side === 1, `TÚ ${x.side === 1 ? 'compra' : 'venta'}`, '#2f81f7', 1.2); add(x.tOut, x.side !== 1, `cierre ${pnl >= 0 ? '+' : ''}${fmt(pnl / (S.fx || 1), 1)}`, pnl >= 0 ? '#3fb950' : '#e5534b', 1.2); }
+    // líneas de tu operación abierta
+    const cu = capUsd();
+    for (const o of POS.open) {
+      pl(o.entry, '#2f81f7', `Tu entrada ${o.side === 1 ? 'largo' : 'corto'}`, 0, 2);
+      pl(o.stop, '#e5534b', o.be ? 'Tu stop (en entrada)' : 'Tu stop', 0, 2);
+      if (o.tp) pl(o.tp, '#3fb950', 'Tu objetivo', 0, 2);
+      if (o.qty * o.entry > cu) pl(o.entry * (1 - o.side * (cu / (o.qty * o.entry))), '#f0883e', 'Liquidación', 1, 1);
+    }
+  }
+  if (showSig && S.recent) for (const x of S.recent) if (x.t >= t0 && x.t <= tEnd) add(x.t, x.side === 1, `${x.st.id}${x.r != null ? ' ' + (x.r >= 0 ? '+' : '') + x.r.toFixed(1).replace('.', ',') + 'R' : ''}`, x.side === 1 ? '#7ee787' : '#ff7b72', 0.8);
+  if (showSig && S.signals) for (const x of S.signals) if (!x.invalid) add(x.barT, x.side === 1, `${x.st.id} AHORA ${x.side === 1 ? 'COMPRA' : 'VENTA'}`, x.side === 1 ? '#3fb950' : '#e5534b', 1.6);
+}
+// ---- barra fija de ganancias/pérdidas no realizadas (cada segundo) ----
+function pnlBar() {
+  const el = $('pnlBar'), p = NOW.p || (S.data ? +S.data.tick.lastPrice : null), cur = $('cur').value, fx = S.fx || 1, cu = capUsd();
+  const real = POS.log.reduce((a, x) => a + (x.exit - x.entry) * x.side * x.qty, 0);
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const realHoy = POS.log.filter(x => x.tOut >= d0.getTime()).reduce((a, x) => a + (x.exit - x.entry) * x.side * x.qty, 0);
+  const sg = v => `<b class="${v >= 0 ? 'up' : 'dn'}">${v >= 0 ? '+' : '−'}${fmt(Math.abs(v) / fx, 2)} ${cur}</b>`;
+  if (!POS.open.length && !POS.log.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  let un = 0, h = '';
+  for (const o of POS.open) {
+    const pnl = p ? (p - o.entry) * o.side * o.qty : 0, R = Math.abs(o.entry - o.stop0) * o.qty, r = R ? pnl / R : 0; un += pnl;
+    const toS = p ? (p - o.stop) * o.side / p * 100 : 0;
+    h += `<div>${o.side === 1 ? '🟢 LARGO' : '🔴 CORTO'} ${fmt(o.entry)} → <b>${p ? fmt(p, 1) : '—'}</b> · <span style="font-size:18px">${sg(pnl)}</span> <span class="mut">(${r >= 0 ? '+' : ''}${r.toFixed(2).replace('.', ',')}R · ${pnl >= 0 ? '+' : ''}${(cu ? pnl / cu * 100 : 0).toFixed(2).replace('.', ',')} % cuenta · ${toS > 0 ? 'stop a ' + toS.toFixed(2).replace('.', ',') + ' %' : '⚠️ STOP SUPERADO'})</span></div>`;
+  }
+  el.style.borderBottomColor = POS.open.length ? (un >= 0 ? '#238636' : '#da3633') : '#30363d';
+  el.innerHTML = (POS.open.length ? `<div class="small mut">NO REALIZADO (en directo)</div>${h}` : '<span class="mut">Sin operaciones abiertas.</span>') +
+    `<div class="small" style="margin-top:2px">Realizado hoy ${sg(realHoy)} · total ${sg(real)}${POS.open.length > 1 ? ` · no realizado total ${sg(un)}` : ''}</div>`;
+}
+setTimeout(() => { pnlBar(); setInterval(pnlBar, 1000); }, 0);
+
 function lwDraw(o) {
   if (!lwInit() || !EW.cAll) return false;
   const all = EW.cAll, step = TFSEC[EW.tf] || 3600, lastT = tsec(all[all.length - 1].t);
@@ -2102,6 +2148,7 @@ function lwDraw(o) {
       markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: gi === 0 ? '#56d4dd' : '#8b98a8', shape: 'circle', size: gi === 0 ? 0.5 : 0.2, text: gi === 0 ? '(' + p.lab + ')' : p.lab });
     })));
   }
+  tradeMarks(all, markers, pl);
   if (!o) { LW.wave.setData([]); LW.proj.setData([]); LW.ch1.setData([]); LW.ch2.setData([]); LW.candle.setMarkers(markers.sort((a, b) => a.time - b.time)); return true; }
   const wv = []; if (!nestOn) for (const p of o.points) { const t = T(p); if (!wv.length || t > wv[wv.length - 1].time) wv.push({ time: t, value: p.p }); } // tiempos estrictamente crecientes
   LW.wave.setData(wv);
@@ -2274,7 +2321,7 @@ $('mdBtn').addEventListener('click', () => { MD15 = null; mdRun(); });
 
 // ---------- Mi operación: confirmar entrada, seguimiento en directo y diario ----------
 const POS = { open: store.get('posOpen', []), log: store.get('posLog', []), skip: store.get('posSkip', []) };
-const posSave = () => { store.set('posOpen', POS.open); store.set('posLog', POS.log); store.set('posSkip', POS.skip); };
+const posSave = () => { store.set('posOpen', POS.open); store.set('posLog', POS.log); store.set('posSkip', POS.skip); setTimeout(() => { try { pnlBar(); renderElliott(); } catch (e) {} }, 0); };
 const capUsd = () => (+$('cap').value || 0) * (S.fx || 1);
 function posForm(box, d) { // formulario de confirmación con los datos de la señal ya rellenos (se pueden cambiar)
   box.innerHTML = `<div class="row" style="margin-top:8px;align-items:flex-end">
