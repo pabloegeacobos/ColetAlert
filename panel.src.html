@@ -76,6 +76,11 @@
     <div id="liveFeed" class="small" style="max-height:260px;overflow:auto;font-variant-numeric:tabular-nums"></div>
   </section>
 
+  <section class="card wide" id="mkCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📊 Mercado: ganancias/pérdidas no realizadas y zonas de compra/venta</span><span id="mkAt" class="small mut" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div id="mkBox"><p class="mut">Cargando…</p></div>
+  </section>
+
   <section class="card wide" id="capCard">
     <h2 style="display:flex;justify-content:space-between;align-items:center"><span>🧯 Detector de capitulación</span><span id="capAt" class="small mut" style="text-transform:none;letter-spacing:0"></span></h2>
     <div class="small mut" style="margin-bottom:6px">Suena cuando se cumplen las 4 condiciones. Barrida por debajo de <input id="capSweep" type="number" step="10" style="width:90px"> · recuperar <input id="capReclaim" type="number" step="10" style="width:90px"> (cierre de vela de 1h). Suena una alarma (5 pitidos dobles) aunque tengas las demás alertas apagadas. <button id="capSnd" class="small">🔊 Activar sonido</button> <button id="capTest" class="sec small">Probar</button></div>
@@ -118,6 +123,7 @@
       <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewHist" checked> Estructura completa (grado mayor + ondas internas)</label>
       <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="tmMine" checked> Mis compras/ventas</label>
       <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="tmSig" checked> Señales de las estrategias</label>
+      <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="tmMk" checked> Zonas del mercado</label>
       <label class="adv" style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewOwn"> Recuento propio de esta temporalidad</label>
       <select id="ewAlt" class="adv" style="min-width:260px"></select>
       <span id="ewMsg" class="small mut adv"></span>
@@ -787,7 +793,7 @@ document.querySelectorAll('#ewTf button').forEach(b => b.addEventListener('click
   document.querySelectorAll('#ewTf button').forEach(x => x.classList.remove('on')); b.classList.add('on'); EW.tf = b.dataset.tf; runElliott();
 }));
 $('btnEw').addEventListener('click', () => runElliott());
-['tmMine', 'tmSig'].forEach(id => $(id).addEventListener('change', () => renderElliott()));
+['tmMine', 'tmSig', 'tmMk'].forEach(id => $(id).addEventListener('change', () => renderElliott()));
 $('ewHist').addEventListener('change', () => renderElliott());
 $('ewOwn').addEventListener('change', () => renderElliott());
 $('ewAlt').addEventListener('change', () => { EW.sel = +$('ewAlt').value; renderElliott(); });
@@ -1116,7 +1122,7 @@ function lwDraw(o) {
       markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: gi === 0 ? '#56d4dd' : '#8b98a8', shape: 'circle', size: gi === 0 ? 0.5 : 0.2, text: gi === 0 ? '(' + p.lab + ')' : p.lab });
     })));
   }
-  tradeMarks(all, markers, pl);
+  tradeMarks(all, markers, pl); mkLines(pl);
   if (!o) { LW.wave.setData([]); LW.proj.setData([]); LW.ch1.setData([]); LW.ch2.setData([]); LW.candle.setMarkers(markers.sort((a, b) => a.time - b.time)); return true; }
   const wv = []; if (!nestOn) for (const p of o.points) { const t = T(p); if (!wv.length || t > wv[wv.length - 1].time) wv.push({ time: t, value: p.p }); } // tiempos estrictamente crecientes
   LW.wave.setData(wv);
@@ -1515,6 +1521,91 @@ function liveRender() {
     const tg = ewTargets(eo, p).find(t => !t.hit); const tk = tg ? Math.round(tg.p) : 0; if (S0.ewT && tk !== S0.ewT) liveEv('up', `🎯 Elliott: objetivo ${fmt(S0.ewT)} alcanzado → siguiente ${tg ? fmt(tg.p) : '—'}`, true); S0.ewT = tk; }
 }
 liveFeedRender(); setInterval(liveRender, 1000);
+
+
+// ---------- Mercado: P&L no realizado (ballenas y todos los poseedores) y zonas de compra/venta ----------
+const MK = { onchain: store.get('mkOnchain', null), prof: null, wh: null };
+async function mkOnchain() { // MVRV diario de Coin Metrics (gratis): NUPL = 1 − 1/MVRV · precio medio de compra = precio / MVRV
+  if (MK.onchain && Date.now() - MK.onchain.at < 6 * 3600e3) return;
+  try {
+    const j = await (await fetch('https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur,PriceUSD&frequency=1d&page_size=30&paging_from=end')).json();
+    const d = (j.data || []).filter(x => x.CapMVRVCur && x.PriceUSD); if (!d.length) throw new Error('sin datos');
+    const last = d[d.length - 1], wk = d[Math.max(0, d.length - 8)];
+    MK.onchain = { at: Date.now(), day: last.time.slice(0, 10), mvrv: +last.CapMVRVCur, rp: +last.PriceUSD / +last.CapMVRVCur, mvrvWk: +wk.CapMVRVCur };
+    store.set('mkOnchain', MK.onchain);
+  } catch (e) { MK.onchainErr = e.message; }
+}
+function mkProfile() { // perfil de volumen de 30 días con velas de 1h: dónde se ha comprado y vendido más
+  const c = S.data && S.data.h1 ? S.data.h1.slice(-720) : null; if (!c || c.length < 100) return null;
+  const lo = Math.min(...c.map(x => x.l)), hi = Math.max(...c.map(x => x.h)), step = Math.max(50, Math.round((hi - lo) / 80 / 50) * 50), n = Math.ceil((hi - lo) / step) + 1;
+  const vol = new Array(n).fill(0), buy = new Array(n).fill(0);
+  for (const x of c) {
+    const a = Math.floor((x.l - lo) / step), b = Math.floor((x.h - lo) / step), k = b - a + 1, pb = x.h > x.l ? (x.c - x.l) / (x.h - x.l) : 0.5; // reparto por la posición del cierre en la vela
+    for (let i = a; i <= b; i++) { vol[i] += x.v / k; buy[i] += x.v / k * pb; }
+  }
+  const tot = vol.reduce((a, v) => a + v, 0), poc = vol.indexOf(Math.max(...vol));
+  let vaL = poc, vaH = poc, acc = vol[poc];
+  while (acc < tot * 0.7 && (vaL > 0 || vaH < n - 1)) { const dn = vaL > 0 ? vol[vaL - 1] : -1, up = vaH < n - 1 ? vol[vaH + 1] : -1; if (up >= dn) acc += vol[++vaH]; else acc += vol[--vaL]; }
+  const px = i => lo + (i + 0.5) * step;
+  // nodos: máximos locales de volumen
+  const nodes = []; for (let i = 2; i < n - 2; i++) if (vol[i] >= Math.max(vol[i - 1], vol[i + 1], vol[i - 2], vol[i + 2]) && vol[i] > tot / n * 1.3) nodes.push({ p: px(i), v: vol[i], pb: buy[i] / vol[i] });
+  nodes.sort((a, b) => b.v - a.v);
+  return { poc: px(poc), vah: px(vaH) + step / 2, val: px(vaL) - step / 2, nodes: nodes.slice(0, 6), step, vol, buy, lo, n, max: Math.max(...vol) };
+}
+function mkWhales() {
+  const P = WH.pos || []; if (!P.length) return null;
+  const side = s => { const g = P.filter(w => Math.sign(w.szi) === s), btc = g.reduce((a, w) => a + Math.abs(w.szi), 0), up = g.reduce((a, w) => a + w.upnl, 0), avg = btc ? g.reduce((a, w) => a + Math.abs(w.szi) * w.entry, 0) / btc : 0, win = g.filter(w => w.upnl > 0).length; return { n: g.length, btc, up, avg, win, g }; };
+  const price = NOW.p || +S.data.tick.lastPrice, liqs = P.filter(w => w.liq && w.liq > 0).map(w => ({ p: w.liq, btc: Math.abs(w.szi), long: w.szi > 0 }));
+  const near = (long) => liqs.filter(x => x.long === long && (long ? x.p < price : x.p > price)).sort((a, b) => Math.abs(a.p - price) - Math.abs(b.p - price)).slice(0, 3);
+  return { L: side(1), Sh: side(-1), liqL: near(true), liqS: near(false) };
+}
+function mkLines(pl) {
+  if ($('tmMk') && !$('tmMk').checked) return;
+  const pr = MK.prof, wh = MK.wh, oc = MK.onchain;
+  if (pr) { pl(pr.poc, '#d2a8ff', 'Más negociado 30 d (POC)', 0, 2); pl(pr.vah, '#8957e5', 'Zona de valor alta', 2, 1); pl(pr.val, '#8957e5', 'Zona de valor baja', 2, 1); }
+  if (wh) { if (wh.L.avg) pl(wh.L.avg, '#3fb950', `Entrada media largos ballenas`, 1, 1); if (wh.Sh.avg) pl(wh.Sh.avg, '#e5534b', `Entrada media cortos ballenas`, 1, 1); }
+  if (oc && oc.rp) pl(oc.rp, '#e3b341', 'Precio medio de compra de todo BTC', 0, 1);
+}
+async function mkRun() {
+  if (!S.data) return;
+  await mkOnchain(); MK.prof = mkProfile(); MK.wh = mkWhales();
+  const price = NOW.p || +S.data.tick.lastPrice, cur = $('cur').value, fx = S.fx || 1, pr = MK.prof, wh = MK.wh, oc = MK.onchain;
+  const m$ = v => `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v) / 1e6, 1)} M$`, pct = v => `${v >= 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} %`;
+  let h = '';
+  // 1) todos los poseedores (on-chain)
+  if (oc) {
+    const nupl = 1 - 1 / oc.mvrv, gain = (price / oc.rp - 1) * 100;
+    const fase = nupl < 0 ? '🟥 Capitulación: el poseedor medio pierde dinero (históricamente, zona de suelos)' : nupl < 0.25 ? '🟧 Esperanza/miedo: poco beneficio acumulado' : nupl < 0.5 ? '🟨 Optimismo: beneficio moderado' : nupl < 0.75 ? '🟩 Creencia/codicia: mucho beneficio sin realizar' : '🟦 Euforia: históricamente, zona de techos';
+    h += `<div class="sig" style="margin-bottom:10px"><b>Todos los poseedores de BTC (on-chain, dato diario ${oc.day})</b>
+      <div class="lines"><div class="k">Precio medio de compra del mercado</div><div><b>${fmt(oc.rp)}</b> $ → el poseedor medio va <b class="${gain >= 0 ? 'up' : 'dn'}">${pct(gain)}</b></div>
+      <div class="k">Ganancia no realizada neta (NUPL)</div><div><b>${(nupl * 100).toFixed(0)} %</b> de la capitalización · ${fase}</div>
+      <div class="k">Hace una semana</div><div class="mut">NUPL ${((1 - 1 / oc.mvrvWk) * 100).toFixed(0)} %</div></div></div>`;
+  } else h += `<div class="mut small" style="margin-bottom:8px">Dato on-chain no disponible ahora${MK.onchainErr ? ' (' + MK.onchainErr + ')' : ''}.</div>`;
+  // 2) ballenas en derivados
+  if (wh) {
+    const row = (x, lab, cls) => `<div class="k">${lab}</div><div><b class="${cls}">${x.n}</b> ballenas · ${fmt(x.btc)} BTC · entrada media <b>${x.avg ? fmt(x.avg) : '—'}</b> · no realizado <b class="${x.up >= 0 ? 'up' : 'dn'}">${m$(x.up)}</b> <span class="mut">(${x.win}/${x.n} en ganancia)</span></div>`;
+    const liqTxt = a => a.length ? a.map(x => `${fmt(x.p)} (${fmt(x.btc)} BTC)`).join(' · ') : '—';
+    const pain = wh.L.up < 0 && wh.L.btc > wh.Sh.btc ? '⚠️ Los largos grandes van perdiendo: si cae más, pueden vender o ser liquidados (más presión bajista).' : wh.Sh.up < 0 && wh.Sh.btc > wh.L.btc ? '⚠️ Los cortos grandes van perdiendo: si sube, tendrán que recomprar (puede acelerar la subida).' : wh.L.up > 0 && wh.Sh.up < 0 ? 'Los largos ganan y los cortos pierden.' : wh.Sh.up > 0 && wh.L.up < 0 ? 'Los cortos ganan y los largos pierden.' : '';
+    h += `<div class="sig" style="margin-bottom:10px"><b>Ballenas de Hyperliquid (top 40, en directo cada 5 min)</b>
+      <div class="lines">${row(wh.L, 'Largos', 'up')}${row(wh.Sh, 'Cortos', 'dn')}
+      <div class="k">Liquidaciones de largos más cerca</div><div class="dn">${liqTxt(wh.liqL)}</div>
+      <div class="k">Liquidaciones de cortos más cerca</div><div class="up">${liqTxt(wh.liqS)}</div></div>${pain ? `<div class="alert i small" style="margin-top:6px">${pain}</div>` : ''}</div>`;
+  }
+  // 3) zonas de compra/venta
+  if (pr) {
+    const where = price > pr.vah ? 'por ENCIMA de la zona de valor (la zona de valor actúa de soporte)' : price < pr.val ? 'por DEBAJO de la zona de valor (la zona de valor actúa de resistencia)' : 'DENTRO de la zona de valor (rango)';
+    const nodes = pr.nodes.slice().sort((a, b) => b.p - a.p).map(nd => `<tr><td class="r">${fmt(nd.p)}</td><td>${nd.p > price ? '<span class="dn">resistencia</span>' : '<span class="up">soporte</span>'}</td><td class="r">${(nd.p / price - 1 >= 0 ? '+' : '') + ((nd.p / price - 1) * 100).toFixed(1).replace('.', ',')} %</td><td>${nd.pb >= 0.55 ? 'dominó la compra' : nd.pb <= 0.45 ? 'dominó la venta' : 'equilibrado'}</td></tr>`).join('');
+    const bars = []; for (let i = pr.n - 1; i >= 0; i -= Math.max(1, Math.round(pr.n / 40))) { const p = pr.lo + (i + 0.5) * pr.step, w = Math.round(pr.vol[i] / pr.max * 100), b = pr.vol[i] ? pr.buy[i] / pr.vol[i] : 0.5, isP = Math.abs(p - price) < pr.step * Math.max(1, Math.round(pr.n / 40)) / 2; bars.push(`<div style="display:flex;align-items:center;gap:6px;height:9px;font-size:9px"><span style="width:52px;text-align:right" class="${isP ? 'warn' : 'mut'}">${isP ? '▶ ' : ''}${fmt(p)}</span><div style="height:7px;width:${w}%;max-width:70%;display:flex"><div style="flex:${b};background:#2ea043"></div><div style="flex:${1 - b};background:#da3633"></div></div></div>`); }
+    h += `<div class="sig"><b>Dónde ha comprado y vendido el mercado (30 días, perfil de volumen)</b>
+      <div class="lines"><div class="k">Precio más negociado (POC)</div><div><b>${fmt(pr.poc)}</b></div>
+      <div class="k">Zona de valor (70 % del volumen)</div><div>${fmt(pr.val)} – ${fmt(pr.vah)} · el precio está ${where}</div></div>
+      <table style="margin-top:6px"><tr><th class="r">Zona</th><th>Ahora es</th><th class="r">Distancia</th><th>Quién dominó</th></tr>${nodes}</table>
+      <details style="margin-top:6px"><summary class="small">Ver el perfil completo (verde = compra, rojo = venta)</summary><div style="margin-top:4px">${bars.join('')}</div></details></div>`;
+  }
+  h += `<div class="mut small" style="margin-top:6px">Las ballenas son solo las 40 mayores cuentas de Hyperliquid, no todo el mercado. Las zonas salen del volumen de Bybit; el reparto compra/venta por zona es aproximado (según dónde cerró cada vela). Las líneas se ven en el gráfico de Elliott con «Zonas del mercado».</div>`;
+  $('mkBox').innerHTML = h; $('mkAt').textContent = 'actualizado ' + new Date().toLocaleTimeString('es-ES');
+}
+setTimeout(() => { mkRun().then(() => { try { renderElliott(); } catch (e) {} }); setInterval(mkRun, 60e3); }, 8000);
 
 // ---------- Detector de capitulación: 4 condiciones, aviso cuando se cumplen todas ----------
 const CAP = { liq: [], n: 0, firedKey: store.get('capFired', '') };
