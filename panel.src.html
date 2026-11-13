@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTC Alertas — panel de señales y riesgo</title>
+<style>
+  :root{--bg:#0e1116;--card:#161b22;--line:#263040;--txt:#e6edf3;--mut:#8b98a8;--up:#26a269;--dn:#e5534b;--warn:#d29922;--acc:#4c8dff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  .price{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .mut{color:var(--mut)} .up{color:var(--up)} .dn{color:var(--dn)} .warn{color:var(--warn)}
+  main{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;padding:16px 20px;max-width:1500px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px;font-weight:600}
+  .wide{grid-column:1/-1}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--mut);font-weight:500;font-size:12px}
+  td.r,th.r{text-align:right}
+  .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid currentColor}
+  .sig{border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:8px;padding:12px;margin-bottom:10px}
+  .sig.long{border-left-color:var(--up)} .sig.short{border-left-color:var(--dn)} .sig.blocked{opacity:.75;border-left-color:var(--warn)}
+  .sig h3{margin:0 0 6px;font-size:15px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+  .k{color:var(--mut)} .v{text-align:right;font-variant-numeric:tabular-nums}
+  button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
+  button.sec{background:#2b3442}
+  input,select,textarea{background:#0b0f14;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+  textarea{width:100%;min-height:90px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+  label{display:block;margin:6px 0 2px;color:var(--mut);font-size:12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .alert{padding:8px 10px;border-radius:6px;margin:6px 0;font-size:13px}
+  .alert.w{background:#3a2e10;color:#f0c75e} .alert.d{background:#3b1717;color:#ff9b94} .alert.i{background:#13263f;color:#9cc3ff} .alert.ok{background:#12301f;color:#7ee2a8}
+  canvas{width:100%;height:260px;display:block}
+  ul{margin:6px 0;padding-left:18px} li{margin:3px 0}
+  footer{padding:16px 20px 30px;color:var(--mut);font-size:12px;max-width:1500px;margin:0 auto}
+  .small{font-size:12px}
+  details summary{cursor:pointer;color:var(--mut)}
+  #ewChart{height:380px}
+  .chk{list-style:none;padding:0;margin:6px 0} .chk li{margin:2px 0} .chk .ok{color:var(--up)} .chk .no{color:var(--dn)}
+  .ewgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:14px} @media(max-width:900px){.ewgrid{grid-template-columns:1fr}}
+  .seg button{background:#2b3442;margin-right:4px} .seg button.on{background:var(--acc)}
+  body.simple .adv{display:none!important} body:not(.simple) .sOnly{display:none!important}
+  .big{font-size:20px;font-weight:700;margin:4px 0 10px}
+  .lines{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:17px;font-variant-numeric:tabular-nums}
+  .lines .k{font-size:15px}
+</style>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body class="simple">
+<header>
+  <h1>BTC Alertas</h1>
+  <div><span class="price" id="price">—</span> <span id="chg" class="mut"></span></div>
+  <div class="mut small" id="upd">Cargando datos…</div>
+  <div style="margin-left:auto" class="row">
+    <span id="alertState" class="small mut">Alertas desactivadas</span>
+    <button id="btnAlerts">Activar alertas</button>
+    <button id="btnMode" class="sec">Ver todo</button>
+  </div>
+</header>
+
+<main>
+  <section class="card wide" id="nowCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📍 Ahora mismo</span><span id="nowLive" class="small mut" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div id="nowBox"><p class="mut">Conectando…</p></div>
+  </section>
+
+  <section class="card wide" id="liveCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📡 Qué está pasando (cada segundo)</span><span class="small" style="text-transform:none;letter-spacing:0"><label><input type="checkbox" id="liveSnd"> pitido en cambios importantes</label></span></h2>
+    <div id="liveBox"><p class="mut">Conectando…</p></div>
+    <div class="small mut" style="margin-top:8px"><b>Cambios</b> (el último arriba)</div>
+    <div id="liveFeed" class="small" style="max-height:260px;overflow:auto;font-variant-numeric:tabular-nums"></div>
+  </section>
+
+  <section class="card wide" id="capCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>🧯 Detector de capitulación</span><span id="capAt" class="small mut" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="small mut" style="margin-bottom:6px">Suena cuando se cumplen las 4 condiciones. Barrida por debajo de <input id="capSweep" type="number" step="10" style="width:90px"> · recuperar <input id="capReclaim" type="number" step="10" style="width:90px"> (cierre de vela de 1h). Suena una alarma (5 pitidos dobles) aunque tengas las demás alertas apagadas. <button id="capSnd" class="small">🔊 Activar sonido</button> <button id="capTest" class="sec small">Probar</button></div>
+    <div id="capBox"><p class="mut">Cargando…</p></div>
+  </section>
+
+  <section class="card wide" id="posCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>💼 Mi operación</span><button id="posAdd" class="sec small" style="text-transform:none;letter-spacing:0">+ Añadir operación a mano</button></h2>
+    <div id="posFormManual"></div>
+    <div id="posBox"><p class="mut">No tienes ninguna operación abierta. Cuando entres en una, pulsa «He entrado» en la señal o añádela a mano.</p></div>
+    <div id="posLog" class="small" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card wide">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span><span class="adv">Señales activas</span><span class="sOnly">¿Qué hago ahora?</span></span> <button id="btnDemo" class="sec small adv" style="text-transform:none;letter-spacing:0">Ver ejemplo</button></h2>
+    <div id="signals"><p class="mut">Esperando datos…</p></div>
+  </section>
+
+  <section class="card wide" id="mdCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>🌊 Lectura continua de ondas (de mayor a menor grado)</span><button id="mdBtn" class="sec small" style="text-transform:none;letter-spacing:0">Actualizar</button></h2>
+    <div id="mdBox"><p class="mut">Calculando…</p></div>
+    <details class="adv" style="margin-top:8px"><summary>Cómo se lee</summary>
+      <ul class="small">
+        <li>Cada temporalidad es un grado de onda (Frost y Prechter): semanal = Ciclo (I, II…), diario = Primario (①, ②…), 4h = Intermedio ((1), (2)…), 1h = Menor (1, 2…), 15 min = Minuto (i, ii…). Cada onda de un grado se divide en 5 o 3 ondas del grado inferior.</li>
+        <li>Se lee de arriba abajo: el grado mayor dice la dirección de fondo; los menores dicen en qué tramo de esa onda estamos. Cuando el grado menor va en contra del mayor, es una corrección dentro de la onda grande.</li>
+        <li>Patrones: impulso (con onda 1, 3 o 5 extendida y quinta truncada), diagonales de inicio y final (contractivas y expansivas), zigzag, flat regular, running y expandido, triángulos contractivo, running, de barrera y expansivo, y correcciones complejas: doble y triple zigzag y combinaciones W-X-Y y W-X-Y-X-Z (el triángulo solo como último grupo).</li>
+        <li>Reglas (si se rompen, el recuento se descarta): la 2 no supera el inicio de la 1; la 3 nunca es la más corta; la 4 no entra en la 1 (salvo diagonal); la B de un zigzag no supera el inicio de A; la X no supera el inicio de W; máximo 3 grupos en una compleja; la E de un triángulo contractivo no supera la C.</li>
+        <li>Guías (puntúan): proporciones de Fibonacci del curso, alternancia 2–4, igualdad 1–5 con la 3 extendida, zona de la 4 de grado menor, canal 2–4, Y = W en las complejas, duración, volumen y estructura interna de cada onda (5 en las motrices, 3 en las correctivas).</li>
+        <li>Cada recuento da un nivel de <b>confirmación</b> (lo que tendría que pasar para darlo por bueno) y otro de <b>invalidación</b> (regla o guía que lo anula).</li>
+        <li>Es lectura automática: un analista con experiencia puede preferir otro recuento. Sirve para tener el mapa completo, no como señal.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="card wide" id="ewCard">
+    <h2><span class="adv">Elliott + Fibonacci (reglas del curso)</span><span class="sOnly">Ondas de Elliott</span></h2>
+    <div class="row" style="margin-bottom:8px">
+      <div class="seg" id="ewTf"><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="30">30m</button><button data-tf="60" class="on">1h</button><button data-tf="120">2h</button><button data-tf="240">4h</button><button data-tf="720">12h</button><button data-tf="D">1D</button><button data-tf="W">1S</button></div>
+      <button id="btnEw">Analizar ondas</button>
+      <label style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewHist" checked> Estructura completa (grado mayor + ondas internas)</label>
+      <label class="adv" style="display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--txt)"><input type="checkbox" id="ewOwn"> Recuento propio de esta temporalidad</label>
+      <select id="ewAlt" class="adv" style="min-width:260px"></select>
+      <span id="ewMsg" class="small mut adv"></span>
+    </div>
+    <div class="ewgrid">
+      <div><div id="ewNow" class="small mut" style="margin-bottom:4px"></div><div id="lwBox" style="height:560px;display:none"></div><canvas id="ewChart"></canvas>
+        <div class="small mut adv">Líneas: recuento de ondas · niveles de Fibonacci (dorado, discontinuo) · zona de entrada del curso (azul) · stop (rojo) · objetivos (verde) · invalidación (naranja).</div></div>
+      <div id="ewText" class="small"><p class="mut">Elige la temporalidad y pulsa «Analizar ondas».</p></div>
+    </div>
+    <details class="adv" style="margin-top:8px"><summary>Cómo funciona y qué fiabilidad tiene</summary>
+      <ul class="small">
+        <li>Detecta los giros del precio con un zigzag por ATR a varias escalas (2 a 5 ATR) y prueba todas las estructuras del curso: impulso común, diagonal contractiva, diagonal expansiva, zigzag, flat regular/running/expandido y triángulo. Las combinaciones complejas W-X-Y no se detectan automáticamente.</li>
+        <li>Primero descarta lo que rompe una regla (la 2 no retrocede el 100 % de la 1, la 3 nunca es la más corta, la 4 no solapa la 1 en el impulso común, la B de un zigzag no cubre el 100 % de A…). Después puntúa las proporciones de Fibonacci, el tiempo y el volumen con los rangos de los PDF.</li>
+        <li>Solo ve el grado que cabe en la temporalidad elegida y no puede verificar la estructura interna (si A es 5 o 3 ondas). Por eso da varios recuentos: el principal y alternativos.</li>
+        <li>Prueba histórica (5 años, Binance y Bybit): las entradas del curso aplicadas de forma automática no dieron ventaja. Onda 2 a favor de tendencia: −0,10R/op (1h) y −0,31R/op (4h). Entrada en B a contratendencia: +0,07 a +0,09R/op. La única variante que pasó la validación, el retroceso 50–61,8 % en 1h a favor de la tendencia, está en las alertas con confianza baja. Usa esto para planificar (estructura, invalidación, zonas y objetivos), no como señal por sí solo.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="card wide" id="tvCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📈 Gráfico en directo (TradingView)</span>
+      <span class="seg" id="tvTf" style="text-transform:none;letter-spacing:0"><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="60" class="on">1h</button><button data-tf="240">4h</button><button data-tf="D">1D</button><button data-tf="W">1S</button></span></h2>
+    <div id="tvBox" style="height:600px"></div>
+    <div class="small mut" style="margin-top:4px">Gráfico oficial de TradingView en tiempo real (BTCUSDT perpetuo de Bybit) con MACD y Stoch RSI. Dentro del gráfico puedes cambiar la temporalidad, añadir indicadores y dibujar. Necesita internet.</div>
+  </section>
+
+  <section class="card">
+    <h2><span class="adv">Gestión del riesgo</span><span class="sOnly">Tu dinero</span></h2>
+    <div class="row">
+      <div><label>Capital de la cuenta</label><input id="cap" type="number" min="0" step="50" style="width:120px"></div>
+      <div><label>Moneda</label><select id="cur"><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
+      <div><label>Riesgo por operación (%)</label><input id="riskPct" type="number" min="0.1" max="3" step="0.1" style="width:80px"></div>
+      <div><label>Poder de trading (USD)</label><input id="buyPow" type="number" min="0" step="500" style="width:110px"></div>
+    </div>
+    <label style="margin-top:10px"><input type="checkbox" id="streak2"> Llevo 2 pérdidas seguidas (descanso de 24 h)</label>
+    <div id="riskBox"></div>
+    <details class="adv" style="margin-top:8px"><summary>Reglas que aplica el panel</summary>
+      <ul class="small">
+        <li>El tamaño de la posición se calcula por la distancia al stop: si salta, pierdes exactamente el % elegido.</li>
+        <li>Riesgo por defecto 1 %. Por encima de 2 % el panel avisa: con rachas históricas de 7 pérdidas seguidas, un 2 % supone −13 % de cuenta.</li>
+        <li>Stop puesto en el momento de entrar. Nunca se mueve en contra.</li>
+        <li>TP1: cierras el 50 % y el stop pasa a la entrada. El resto sigue con stop dinámico a 3×ATR del máximo (o mínimo) alcanzado.</li>
+        <li>Cierre por tiempo si no se resuelve (120 velas en 1h, 120 en 4h).</li>
+        <li>Una sola operación a la vez. Tras 2 pérdidas seguidas, 24 h de pausa.</li>
+        <li>Sin entradas desde 4 h antes hasta 2 h después de un dato macro de impacto alto.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section class="card wide" id="inCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">🏛️ Quién compra y quién vende: empresas y gobiernos <button id="inBtn" class="sec small" style="text-transform:none;letter-spacing:0">Actualizar</button></h2>
+    <div id="inSum"><p class="mut">Cargando…</p></div>
+    <div id="inMoves" class="small" style="margin-top:10px"></div>
+    <div class="ewgrid" style="margin-top:10px"><div id="inComp" class="small"></div><div id="inGov" class="small"></div></div>
+    <div class="small mut" style="margin-top:6px">Datos públicos de CoinGecko (tesorerías declaradas en informes oficiales: SEC, bolsas, gobiernos). Cada movimiento enlaza a su fuente. Se actualiza cada 12 h; la primera carga tarda 2–3 minutos porque la API gratuita limita las consultas. No incluye ETF ni carteras privadas sin identificar.</div>
+  </section>
+  <section class="card wide" id="whCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">🐋 Grandes traders (Hyperliquid) <button id="whBtn" class="sec small" style="text-transform:none;letter-spacing:0">Actualizar</button></h2>
+    <div id="whSum"><p class="mut">Cargando ballenas…</p></div>
+    <div id="whMoves" class="small" style="margin-top:8px"></div>
+    <div id="whTable" class="small" style="margin-top:8px"></div>
+    <div class="small mut adv" style="margin-top:6px">Las 40 cuentas con más beneficio histórico y más de 5 M$ en Hyperliquid (posiciones públicas). Solo se muestran las que tienen BTC abierto. Se actualiza cada 5 min y compara con la vez anterior para detectar compras y ventas. Es un exchange de muchos; un corto puede ser una cobertura. Seguir a las ballenas no está validado como estrategia: úsalo como contexto.</div>
+  </section>
+
+  <section class="card adv">
+    <h2>Contexto de mercado</h2>
+    <div id="context"></div>
+  </section>
+
+  <section class="card adv">
+    <h2>Posicionamiento (futuros Bybit)</h2>
+    <div id="positioning"></div>
+  </section>
+
+  <section class="card wide adv">
+    <h2>Gráfico 1h (últimas 120 velas)</h2>
+    <canvas id="chart"></canvas>
+    <div class="small mut">Línea azul: EMA20 1h. Las líneas horizontales marcan la señal más reciente (entrada, stop, TP1).</div>
+  </section>
+
+  <section class="card wide adv" id="anCard">
+    <h2>Verificar a mis analistas</h2>
+    <div class="small mut">Apunta cada señal tal como te la dan, en el momento en que te la dan. El panel comprueba con los precios reales de Bybit (velas de 15 min) si se activó la entrada y si tocó antes el objetivo o el stop. Si una misma vela toca los dos, cuenta el stop y la marca como «dudosa».</div>
+    <div class="row" style="margin-top:8px">
+      <div><label>Analista</label><input id="anName" style="width:120px" list="anList"><datalist id="anList"></datalist></div>
+      <div><label>Fecha y hora de la señal</label><input id="anTime" type="datetime-local"></div>
+      <div><label>Lado</label><select id="anSide"><option value="1">Largo</option><option value="-1">Corto</option></select></div>
+      <div><label>Entrada</label><select id="anType"><option value="mkt">A mercado</option><option value="lim">Límite</option></select></div>
+      <div><label>Precio entrada</label><input id="anEntry" type="number" step="0.1" style="width:100px"></div>
+      <div><label>Stop</label><input id="anStop" type="number" step="0.1" style="width:100px"></div>
+      <div><label>Objetivo</label><input id="anTp" type="number" step="0.1" style="width:100px"></div>
+      <button id="anAdd">Añadir</button>
+    </div>
+    <div id="anErr" class="small"></div>
+    <div id="anSummary" style="margin-top:10px"></div>
+    <div id="anTable" class="small" style="margin-top:8px"></div>
+    <details style="margin-top:8px"><summary>Copia de seguridad</summary>
+      <div class="small mut">Las señales se guardan en este navegador. Copia este texto para guardarlas en otro sitio, o pega uno anterior y pulsa «Importar».</div>
+      <textarea id="anJson"></textarea><button id="anImport" class="sec">Importar</button> <button id="anCopy" class="sec">Copiar</button>
+    </details>
+  </section>
+
+  <section class="card adv">
+    <h2>Estrategias y su validación</h2>
+    <div id="strats"></div>
+  </section>
+
+  <section class="card adv">
+    <h2>Señales recientes y resultado</h2>
+    <div id="recent" class="small"></div>
+  </section>
+
+  <section class="card adv">
+    <h2>Eventos macro (bloqueo)</h2>
+    <div class="small mut">Una línea por evento: <code>AAAA-MM-DD HH:MM descripción</code> (hora de tu ordenador).</div>
+    <textarea id="events"></textarea>
+    <div id="eventsBox" class="small"></div>
+  </section>
+
+  <section class="card wide adv">
+    <h2>Revalidar con el histórico completo</h2>
+    <p class="small mut">Descarga 1h, 4h, diario y semanal desde 2022 (Bybit) y vuelve a pasar la prueba de cada estrategia: primera mitad del 70 % frente al 30 % final. Tarda 20–60 s. Úsalo cada mes: si la estrategia principal deja de dar resultado positivo fuera de muestra, deja de operarla.</p>
+    <button id="btnVal" class="sec">Revalidar ahora</button>
+    <div id="valBox" class="small" style="margin-top:10px"></div>
+  </section>
+</main>
+
+<footer class="adv">
+  Herramienta de apoyo a la decisión. No ejecuta órdenes. Las estadísticas son de pruebas sobre datos históricos (2022–2026) con un coste supuesto de 0,02 % por lado, sin comisiones como en Quantfury. Los resultados pasados no garantizan los futuros. Datos: API pública de Bybit (futuros perpetuos BTCUSDT); el precio puede diferir unos dólares del que te muestra Quantfury. No es asesoramiento financiero.
+</footer>
+
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+/*__ELLIOTT__*/
+</script>
+<script>
+(function(){
+'use strict';
+const E = window.BTCEngine;
+const H = 3600e3;
+const API = 'https://api.bybit.com/v5/market';
+
+// ---------- Estrategias validadas (resultados de la prueba histórica 2022–2026) ----------
+const MG = o => Object.assign({}, E.DEFAULT_MGMT, { tp2R: 3, partial: 0.5, costPct: 0.0002 }, o);
+const ESTRATEGIAS = [
+  { id: 'B', tf: '1h', setup: 'pullback', alerta: true, acierto: 45, confianza: 'Media', color: 'up',
+    p: { media: 'ema20', rsiReset: 45, exigirDiario: false }, mgmt: MG({ tp1R: 1.5, trail: 3, maxBars: 120 }),
+    resumen: 'Principal. Positiva en Binance y Bybit, en la parte de ajuste y en la de validación.',
+    v: { bybit: '526 ops · 45 % acierto · +0,12R/op · caída máx. 15,6 % · racha peor 7', bin: '521 ops · 45 % · +0,11R/op', oos: 'Validación (2025–26): 41 % · +0,11R/op', anual: '2022 −7 % · 2023 +13 % · 2024 +39 % · 2025 +8 % · 2026 +14 % (riesgo 1 %)' } },
+  { id: 'C', tf: '4h', setup: 'barrido', alerta: true, acierto: 36, confianza: 'Baja', color: 'warn',
+    p: { lookback: 48, wick: 0.35, filtro: 'ninguno' }, mgmt: MG({ tp1R: 2, trail: 3, maxBars: 120 }),
+    resumen: 'Secundaria. Positiva en el conjunto pero irregular: en Binance pierde en 2026 y en Bybit la primera parte es plana.',
+    v: { bybit: '204 ops · 36 % · +0,10R/op · caída máx. 16,5 %', bin: '198 ops · 35 % · +0,17R/op', oos: 'Validación Bybit: 41 % · +0,29R/op', anual: 'Binance: 2022 +0,28R · 2023 +0,15R · 2024 +0,06R · 2025 +0,53R · 2026 −0,18R por op.' } },
+  { id: 'F', tf: '1h', setup: 'fibo', alerta: true, acierto: 58, confianza: 'Baja', color: 'warn',
+    p: { mult: 3, zona: '50-618', impulso: 4, filtro: 'tendencia' }, mgmt: MG({ tp1R: 1, tp2R: 2, trail: 0, maxBars: 120 }),
+    resumen: 'Retroceso Fibonacci 50–61,8 % tras un impulso de 4 ATR o más, a favor de la tendencia de 4h, con vela de rechazo. Es la única versión de Fibonacci/Elliott que pasó la validación en los dos exchanges, pero con pocas operaciones.',
+    v: { bybit: '76 ops · 58 % acierto · +0,12R/op (ajuste +0,08R · validación +0,21R)', bin: '77 ops · 57 % · +0,15R/op (ajuste +0,15R · validación +0,15R)', oos: 'Unas 15 operaciones al año: muestra pequeña', anual: 'Gestión: 50 % en 1R y resto en 2R, stop bajo el 78,6 %' } },
+  { id: 'A', tf: '1h', setup: 'ruptura', alerta: false, confianza: 'Experimental', color: 'mut',
+    p: { pct: 10, volMult: 1.8, stopAtr: 2.5 }, mgmt: MG({ tp1R: 0.5, trail: 3, maxBars: 48 }),
+    resumen: 'Solo informativa, sin alerta. Llega al primer objetivo (0,5R) ~70 % de las veces, pero en Bybit la validación da ≈0R: no es robusta.',
+    v: { bybit: '280 ops · 70 % · +0,07R/op · validación ≈0R', bin: '282 ops · 72 % · +0,11R/op', oos: 'Validación Bybit: 63 % · 0,00R/op', anual: '—' } }
+];
+
+// ---------- Utilidades ----------
+const $ = id => document.getElementById(id);
+const fmt = (x, d = 0) => (x == null || isNaN(x)) ? '—' : x.toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (x, d = 1) => (x == null || isNaN(x)) ? '—' : (x * 100).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' %';
+const tstr = t => new Date(t).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('btcal_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('btcal_' + k, JSON.stringify(v)); } catch (e) {} }
+};
+async function j(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const x = await r.json();
+  if (x.retCode !== undefined && x.retCode !== 0) throw new Error(x.retMsg || 'Error API');
+  return x.result !== undefined ? x.result : x;
+}
+async function klines(interval, limit) {
+  const r = await j(`${API}/kline?category=linear&symbol=BTCUSDT&interval=${interval}&limit=${limit}`);
+  return r.list.map(x => ({ t: +x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[6] })).sort((a, b) => a.t - b.t);
+}
+async function klinesSince(interval, ms, startMs, onProgress) {
+  let end = Date.now(), out = [];
+  for (let guard = 0; guard < 80; guard++) {
+    const r = await j(`${API}/kline?category=linear&symbol=BTCUSDT&interval=${interval}&end=${end}&limit=1000`);
+    const l = r.list; if (!l.length) break;
+    for (const x of l) out.push({ t: +x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[6] });
+    const oldest = +l[l.length - 1][0];
+    if (onProgress) onProgress(out.length);
+    if (oldest <= startMs || l.length < 1000) break;
+    end = oldest - 1;
+  }
+  out.sort((a, b) => a.t - b.t);
+  const seen = new Set();
+  return out.filter(x => x.t >= startMs && !seen.has(x.t) && seen.add(x.t));
+}
+
+// ---------- Preferencias ----------
+if (store.get('cap', null) === 1000) store.set('cap', 500); // valor por defecto antiguo
+$('cap').value = store.get('cap', 500);
+$('buyPow').value = store.get('buyPow', 10000);
+$('cur').value = store.get('cur', 'USD');
+$('riskPct').value = store.get('risk', 1);
+$('streak2').checked = store.get('streak2', false);
+const defaultEvents = '2026-11-10 14:30 IPC EE. UU. (octubre)\n2026-11-13 14:30 IPP EE. UU.';
+$('events').value = store.get('events', defaultEvents);
+for (const id of ['cap', 'cur', 'riskPct', 'streak2', 'events', 'buyPow']) {
+  $(id).addEventListener('input', () => {
+    store.set('buyPow', +$('buyPow').value); store.set('cap', +$('cap').value); store.set('cur', $('cur').value); store.set('risk', +$('riskPct').value);
+    store.set('streak2', $('streak2').checked); store.set('events', $('events').value);
+    if ($('streak2').checked) store.set('streakAt', store.get('streakAt', Date.now())); else store.set('streakAt', null);
+    render();
+  });
+}
+
+function parseEvents() {
+  const out = [];
+  for (const line of $('events').value.split('\n')) {
+    const m = line.trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(.*)$/);
+    if (m) out.push({ t: new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime(), d: m[6] || 'Evento' });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function macroBlock(now) {
+  for (const e of parseEvents()) if (now >= e.t - 4 * H && now <= e.t + 2 * H) return e;
+  return null;
+}
+
+// ---------- Estado ----------
+let S = { data: null, fx: 1, signals: [], recent: [], err: null, last: 0 };
+const seenKeys = new Set(store.get('seen', []));
+
+// ---------- Carga de datos en vivo ----------
+async function load() {
+  try {
+    const [h1, h4, d1, w1, tick, oi, ratio] = await Promise.all([
+      klines('60', 1000), klines('240', 1000), klines('D', 1000), klines('W', 400),
+      j(`${API}/tickers?category=linear&symbol=BTCUSDT`),
+      j(`${API}/open-interest?category=linear&symbol=BTCUSDT&intervalTime=4h&limit=50`),
+      j(`${API}/account-ratio?category=linear&symbol=BTCUSDT&period=4h&limit=50`)
+    ]);
+    if ($('cur').value === 'EUR') {
+      try { const r = await (await fetch('https://api.coinbase.com/v2/exchange-rates?currency=EUR')).json(); S.fx = +r.data.rates.USD || S.fx; } catch (e) {}
+    } else S.fx = 1;
+    const D1h = E.prepare(h1, h4, d1, H, 4 * H, 24 * H);
+    const D4h = E.prepare(h4, d1, w1, 4 * H, 24 * H, 168 * H);
+    S.data = { h1, h4, d1, w1, D1h, D4h, tick: tick.list[0], oi: oi.list.slice().reverse(), ratio: ratio.list.slice().reverse() };
+    S.err = null; S.last = Date.now();
+    computeSignals();
+    if (!EW.c) setTimeout(runElliott, 0); else setTimeout(ewLive, 0);
+    setTimeout(() => typeof mdRun === 'function' && mdRun(), 50);
+    setTimeout(() => typeof nowRender === 'function' && nowRender(), 80);
+  } catch (e) {
+    S.err = e.message || String(e);
+  }
+  render();
+}
+
+function datasetFor(st) { return st.tf === '4h' ? S.data.D4h : S.data.D1h; }
+
+function computeSignals() {
+  const now = Date.now();
+  S.signals = []; S.recent = [];
+  for (const st of ESTRATEGIAS) {
+    const D = datasetFor(st), c = D.c, last = c.length - 2; // última vela cerrada
+    const barMs = st.tf === '4h' ? 4 * H : H;
+    // señales en las 2 últimas velas cerradas siguen siendo accionables si el precio no se ha ido
+    for (let i = last; i >= last - 1; i--) {
+      const sig = E.SETUPS[st.setup].detect(D, i, st.p); if (!sig) continue;
+      const plan = E.buildPlan(sig, st.mgmt, D.i.atr[i]); if (!plan) continue;
+      const price = +S.data.tick.lastPrice;
+      const drift = (price - plan.entry) * plan.side / plan.risk; // en R
+      let invalid = null;
+      for (let k = i + 1; k < c.length; k++) {
+        if (plan.side === 1 ? c[k].l <= plan.stop : c[k].h >= plan.stop) { invalid = 'Ya tocó el stop'; break; }
+        if (plan.side === 1 ? c[k].h >= plan.tp1 : c[k].l <= plan.tp1) { invalid = 'Ya alcanzó el TP1'; break; }
+      }
+      S.signals.push(Object.assign({ st, i, barT: c[i].t, closeT: c[i].t + barMs, drift, invalid, atrNow: D.i.atr[c.length - 2], key: st.id + '|' + c[i].t }, plan));
+      break;
+    }
+    // historial reciente simulado con las mismas reglas
+    const tr = E.backtest(D, st.setup, st.p, st.mgmt, 220, c.length);
+    for (const t of tr) S.recent.push(Object.assign({ st }, t));
+  }
+  S.recent.sort((a, b) => b.t - a.t);
+  // alertas nuevas
+  for (const s of S.signals) {
+    if (!s.st.alerta || s.invalid || seenKeys.has(s.key)) continue;
+    seenKeys.add(s.key); store.set('seen', Array.from(seenKeys).slice(-200));
+    notify(s);
+  }
+}
+
+// ---------- Alertas ----------
+let audioCtx = null, alertsOn = store.get('alertsOn', false), flashTimer = null;
+function updateAlertState() {
+  const perm = ('Notification' in window) ? Notification.permission : 'no disponible';
+  $('alertState').textContent = alertsOn ? `Alertas activas (sonido${perm === 'granted' ? ' + notificación' : ''})` : 'Alertas desactivadas';
+  $('btnAlerts').textContent = alertsOn ? 'Desactivar' : 'Activar alertas';
+  $('btnAlerts').className = alertsOn ? 'sec' : '';
+}
+$('btnAlerts').addEventListener('click', async () => {
+  alertsOn = !alertsOn; store.set('alertsOn', alertsOn);
+  if (alertsOn) {
+    try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); await audioCtx.resume(); beep(); } catch (e) {}
+    try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
+  }
+  updateAlertState();
+});
+function beep() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [0, 0.25, 0.5].forEach((d, k) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = k === 2 ? 1046 : 784; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.25, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.2);
+    o.start(t + d); o.stop(t + d + 0.22);
+  });
+}
+function notify(s) {
+  if (!alertsOn) return;
+  const dir = s.side === 1 ? 'LARGO' : 'CORTO';
+  const blocked = macroBlock(Date.now()) || $('streak2').checked;
+  const title = `${blocked ? '[BLOQUEADA] ' : ''}${dir} BTC — ${E.SETUPS[s.st.setup].nombre} (${s.st.tf})`;
+  const body = `Entrada ${fmt(s.entry)} · Stop ${fmt(s.stop)} · TP1 ${fmt(s.tp1)}`;
+  beep();
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body }); } catch (e) {}
+  let on = false; clearInterval(flashTimer);
+  flashTimer = setInterval(() => { document.title = (on = !on) ? '🔔 ' + dir + ' BTC' : 'BTC Alertas'; }, 900);
+  setTimeout(() => { clearInterval(flashTimer); document.title = 'BTC Alertas'; }, 60000);
+}
+
+// ---------- Render ----------
+function regText(v) { return v === 1 ? '<span class="up">Alcista</span>' : v === -1 ? '<span class="dn">Bajista</span>' : '<span class="warn">Neutral</span>'; }
+
+function render() {
+  updateAlertState();
+  if (S.err && !S.data) { $('signals').innerHTML = `<div class="alert d">No se pudieron cargar los datos: ${S.err}. Reintento en 60 s.</div>`; return; }
+  if (!S.data) return;
+  const d = S.data, tk = d.tick, price = +tk.lastPrice;
+  $('price').textContent = fmt(price, 1) + ' $';
+  const ch = +tk.price24hPcnt;
+  $('chg').innerHTML = `<span class="${ch >= 0 ? 'up' : 'dn'}">${ch >= 0 ? '+' : ''}${pct(ch, 2)}</span> <span class="mut">24 h</span>`;
+  $('upd').innerHTML = `Actualizado ${new Date(S.last).toLocaleTimeString('es-ES')}${S.err ? ` · <span class="warn">último intento falló: ${S.err}</span>` : ''} · se actualiza cada minuto`;
+  renderSignals(price); renderContext(price); renderPositioning(); renderRisk(); renderStrats(); renderRecent(); renderEvents(); drawChart();
+}
+
+function sizing(s) {
+  const cap = +$('cap').value || 0, rp = (+$('riskPct').value || 0) / 100, bp = +$('buyPow').value || 0;
+  const riskUsdWanted = cap * rp * S.fx;
+  let qty = riskUsdWanted / s.risk;          // BTC para perder exactamente el % elegido si salta el stop
+  const capped = bp > 0 && qty * s.entry > bp; // no cabe en tu poder de trading
+  if (capped) qty = bp / s.entry;
+  const notionalUsd = qty * s.entry, riskUsd = qty * s.risk;
+  const capUsd = cap * S.fx, liqMove = notionalUsd ? capUsd / notionalUsd : 1; // pérdida que se come todo el margen
+  const liq = s.entry * (1 - s.side * liqMove);
+  return { riskAcc: riskUsd / S.fx, qty, notionalUsd, notionalAcc: notionalUsd / S.fx, lev: capUsd ? notionalUsd / capUsd : 0, capped, liq, liqMove };
+}
+
+function signalCard(s, price, cur, mb, paused) {
+    const z = sizing(s), dir = s.side === 1 ? 'LARGO' : 'CORTO';
+    const late = !s.invalid && s.drift > 0.3;
+    const cls = ['sig', s.side === 1 ? 'long' : 'short', (mb || paused || s.invalid || !s.st.alerta) ? 'blocked' : ''].join(' ');
+    const trailNow = s.atrNow * s.st.mgmt.trail;
+    return `<div class="${cls}">
+      <h3><span class="${s.side === 1 ? 'up' : 'dn'}">${dir}</span> · ${E.SETUPS[s.st.setup].nombre} (${s.st.tf}) <span class="pill ${s.st.color}">Confianza ${s.st.confianza}</span></h3>
+      <div class="small mut">${s.why}. Vela de ${tstr(s.barT)} (cerró ${tstr(s.closeT)}).</div>
+      ${s.invalid ? `<div class="alert d">${s.invalid}: señal caducada, no entres.</div>` : ''}
+      ${late ? `<div class="alert w">El precio ya se ha movido ${fmt(s.drift, 2)}R a favor desde la entrada. Entrar ahora empeora la relación beneficio/riesgo: espera otra señal.</div>` : ''}
+      ${!s.st.alerta ? `<div class="alert i">Estrategia experimental: solo informativa. No superó la validación en los dos exchanges.</div>` : ''}
+      <div class="grid2" style="margin-top:8px">
+        <div class="k">Entrada (cierre de la vela)</div><div class="v">${fmt(s.entry, 1)}</div>
+        <div class="k">Stop (obligatorio)</div><div class="v dn">${fmt(s.stop, 1)} <span class="mut">(${pct(s.risk / s.entry, 2)})</span></div>
+        <div class="k">TP1 — cierra 50 %, stop a entrada</div><div class="v up">${fmt(s.tp1, 1)} <span class="mut">(${fmt(s.st.mgmt.tp1R, 1)}R)</span></div>
+        <div class="k">Resto — stop dinámico</div><div class="v">${s.st.mgmt.trail}×ATR ≈ ${fmt(trailNow)} $ desde el ${s.side === 1 ? 'máximo' : 'mínimo'}</div>
+        <div class="k">Riesgo si salta el stop</div><div class="v">${fmt(z.riskAcc, 2)} ${cur}</div>
+        <div class="k">Tamaño</div><div class="v">${fmt(z.qty, 4)} BTC · ${fmt(z.notionalAcc)} ${cur}</div>
+        <div class="k">Apalancamiento necesario</div><div class="v ${z.lev > 5 ? 'warn' : ''}">${fmt(z.lev, 2)}×</div>
+        <div class="k">Precio actual</div><div class="v">${fmt(price, 1)} <span class="mut">(${s.drift >= 0 ? '+' : ''}${fmt(s.drift, 2)}R)</span></div>
+      </div>
+      <div class="small mut" style="margin-top:6px">Histórico de esta estrategia: ${s.st.v.bybit}.</div>
+    </div>`;
+  }
+
+let SIMPLE = (()=>{ try { return localStorage.getItem('modo') !== 'completo'; } catch(e) { return true; } })();
+function applyMode() { document.body.classList.toggle('simple', SIMPLE); $('btnMode').textContent = SIMPLE ? 'Ver todo' : 'Ver menos'; }
+$('btnMode').addEventListener('click', () => { SIMPLE = !SIMPLE; try { localStorage.setItem('modo', SIMPLE ? 'simple' : 'completo'); } catch(e) {} applyMode(); render(); if (EW.c) renderElliott(); if (WH.at) whRender(); if (IN.st) inRender(); setTimeout(() => { drawChart && S.data && drawChart(); if (EW.c) renderElliott(); }, 30); });
+applyMode();
+
+function explica(s) {
+  const b = s.side === 1;
+  switch (s.st.setup) {
+    case 'pullback': return b ? 'La tendencia de 4 horas es alcista. El precio ha bajado un poco hasta su media y está rebotando. Se compra el rebote para seguir la subida.'
+                              : 'La tendencia de 4 horas es bajista. El precio ha subido un poco hasta su media y se está girando. Se vende el giro para seguir la bajada.';
+    case 'barrido': return b ? 'El precio rompió el mínimo de los últimos 8 días, saltaron los stops de mucha gente y volvió a subir enseguida. Eso suele marcar un suelo.'
+                             : 'El precio rompió el máximo de los últimos 8 días, saltaron los stops de mucha gente y volvió a bajar enseguida. Eso suele marcar un techo.';
+    case 'fibo': return b ? 'Después de una subida fuerte, el precio ha bajado hasta la zona Fibonacci del 50–61,8 % y ha rebotado. Se compra esperando que siga subiendo.'
+                          : 'Después de una bajada fuerte, el precio ha subido hasta la zona Fibonacci del 50–61,8 % y se ha girado. Se vende esperando que siga bajando.';
+    default: return s.why;
+  }
+}
+const EWCACHE = {};
+function ewSesgo(tf) { // sesgo del recuento principal de Elliott en la temporalidad de la señal
+  if (!S.data) return null;
+  const c = (tf === '4h' ? S.data.h4 : S.data.h1).slice(0, -1).slice(-400);
+  const key = tf + c[c.length - 1].t;
+  if (!(key in EWCACHE)) { try { const o = window.BTCElliott.countWaves(c, E.computeIndicators(c).atr)[0]; EWCACHE[key] = o ? o.sesgo : 0; } catch (e) { EWCACHE[key] = 0; } }
+  return EWCACHE[key];
+}
+function simpleCard(s, cur, mb, paused) {
+  const z = sizing(s), buy = s.side === 1;
+  if (s.invalid) return `<div class="big mut">⚪ Señal caducada. No entres.</div>`;
+  if (mb) return `<div class="big warn">🟡 Espera: hay noticia importante (${mb.d}).</div>`;
+  if (paused) return `<div class="big warn">🟡 Descansa 24 h: llevas 2 pérdidas seguidas.</div>`;
+  if (s.drift > 0.3) return `<div class="big warn">🟡 Llegas tarde: el precio ya se fue. Espera otra.</div>`;
+  return `<div class="sig ${buy ? 'long' : 'short'}">
+    <div class="big ${buy ? 'up' : 'dn'}">${buy ? '🟢 COMPRA' : '🔴 VENDE'} <span style="font-size:16px;color:var(--txt)">· ${s.st.acierto} % de acierto</span></div>
+    <div style="margin-bottom:10px">${explica(s)}</div>
+    ${(() => { const e = ewSesgo(s.st.tf); if (!e) return '<div class="mut" style="margin-bottom:10px">Elliott (' + s.st.tf + '): sin ondas claras.</div>';
+      return e === s.side ? '<div class="alert ok">✅ Elliott (' + s.st.tf + ') dice lo mismo.</div>'
+        : '<div class="alert w">⚠️ Elliott (' + s.st.tf + ') dice lo contrario. Manda la alerta, que es la que está probada. Si dudas, no entres: no pasa nada por perder una.</div>'; })()}
+    <div class="lines">
+      <div class="k">Entra en</div><div><b>${fmt(s.entry)}</b></div>
+      <div class="k">Stop</div><div class="dn"><b>${fmt(s.stop)}</b></div>
+      <div class="k">Objetivo</div><div class="up"><b>${fmt(s.tp1)}</b></div>
+      <div class="k">Cantidad</div><div><b>${fmt(z.qty, 4)} BTC</b> <span class="mut">≈ ${fmt(z.notionalUsd)} $ de tus ${fmt(+$('buyPow').value || 0)} $ (×${z.lev.toFixed(1).replace('.', ',')})</span></div>
+      <div class="k">Si sale mal</div><div>pierdes ${fmt(z.riskAcc, 2)} ${cur}</div>
+      <div class="k">Si llega al objetivo</div><div class="up">ganas ${fmt(z.qty * Math.abs(s.tp1 - s.entry) / S.fx, 2)} ${cur}</div>
+    </div>
+    ${z.capped ? `<div class="alert w small">Con tu poder de trading no llega para arriesgar el % elegido: la posición queda limitada a ${fmt(+$('buyPow').value)} $.</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="posIn" data-k="${s.st.id}|${s.barT}">✅ He entrado</button><button class="sec posSkip" data-k="${s.st.id}|${s.barT}">❌ No he entrado</button></div>
+    <div class="posForm" data-k="${s.st.id}|${s.barT}"></div>
+    <div style="margin-top:10px">Al llegar al objetivo: cierra la mitad y pon el stop en ${fmt(s.entry)}.</div>
+    <div class="mut small" style="margin-top:6px">${s.st.acierto} % = de cada 100 señales así en el pasado, ${s.st.acierto} salieron bien. Las que salen bien ganan más de lo que pierden las malas.</div>
+  </div>`;
+}
+
+let demo = false;
+$('btnDemo').addEventListener('click', () => { demo = !demo; $('btnDemo').textContent = demo ? 'Quitar ejemplo' : 'Ver ejemplo'; render(); });
+function demoSignal() { // reconstruye la última señal histórica de la estrategia principal tal y como se habría mostrado
+  const st = ESTRATEGIAS[0], D = datasetFor(st);
+  const tr = S.recent.find(t => t.st.id === st.id); if (!tr) return null;
+  const sig = E.SETUPS[st.setup].detect(D, tr.i, st.p); const plan = sig && E.buildPlan(sig, st.mgmt, D.i.atr[tr.i]); if (!plan) return null;
+  return Object.assign({ st, i: tr.i, barT: D.c[tr.i].t, closeT: D.c[tr.i].t + H, drift: 0, invalid: null, atrNow: D.i.atr[tr.i], demo: true }, plan);
+}
+function renderSignals(price) {
+  const now = Date.now(), cur = $('cur').value, mb = macroBlock(now), paused = $('streak2').checked;
+  let html = '';
+  if (demo) { const ds = demoSignal(); if (ds) { html += '<div class="alert i">EJEMPLO: última señal histórica de la estrategia principal, mostrada como la verías en directo. No es una señal actual.</div>'; html += signalCard(ds, ds.entry, cur, false, false); } }
+  if (mb) html += `<div class="alert w">Bloqueo macro activo: ${mb.d} (${tstr(mb.t)}). No abras operaciones nuevas hasta 2 h después del dato.</div>`;
+  if (paused) html += `<div class="alert w">Pausa por 2 pérdidas seguidas activada. Las señales se muestran pero no deberías operarlas durante 24 h.</div>`;
+  if (SIMPLE) {
+    const sl = S.signals.filter(s => s.st.alerta);
+    let sh = demo ? '' : '';
+    if (!sl.length) { const nb = nextBars(now); const mins = Math.max(0, Math.ceil((Math.ceil(now / H) * H - now) / 60e3));
+      sh += `<div class="big">⚪ Nada que hacer. Espera.</div><div class="mut">Vigilando cada minuto 👀 · Próxima señal posible al cierre de la vela de las ${nb.h1} (en ${mins} min). Si sale algo, suena.</div>`; }
+    for (const s of sl) sh += simpleCard(s, cur, mb, paused);
+    $('signals').innerHTML = sh; return;
+  }
+  const list = S.signals.filter(s => s.st.alerta || true);
+  if (!list.length) {
+    const nb = nextBars(now);
+    html += `<p class="mut">Ninguna estrategia da señal en las últimas velas cerradas. Próximo cierre 1h: ${nb.h1} · 4h: ${nb.h4}. No hacer nada también es una decisión válida.</p>`;
+  }
+  for (const s of list) html += signalCard(s, price, cur, mb, paused);
+  $('signals').innerHTML = html;
+}
+function nextBars(now) {
+  const n1 = Math.ceil(now / H) * H, n4 = Math.ceil(now / (4 * H)) * 4 * H;
+  const t = x => new Date(x).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  return { h1: t(n1), h4: t(n4) };
+}
+
+function renderContext(price) {
+  const d = S.data, D1 = d.D1h, D4 = d.D4h;
+  const i1 = D1.c.length - 2, i4 = D4.c.length - 2;
+  const ind1d = E.computeIndicators(d.d1), id = d.d1.length - 2;
+  const last24 = d.h1.slice(-24), last7 = d.h1.slice(-168);
+  const hi24 = Math.max(...last24.map(x => x.h)), lo24 = Math.min(...last24.map(x => x.l));
+  const hi7 = Math.max(...last7.map(x => x.h)), lo7 = Math.min(...last7.map(x => x.l));
+  const atrPct = D1.i.atr[i1] / D1.c[i1].c;
+  const comp1 = D1.i.bbWPct[i1], comp4 = D4.i.bbWPct[i4];
+  const ema200d = ind1d.ema200[id];
+  const volRatio = d.d1[id].v / ind1d.volSma[id];
+  let notes = [];
+  if (comp1 <= 10 || comp4 <= 10) notes.push(`<div class="alert i">Compresión de volatilidad (${comp4 <= 10 ? '4h' : '1h'} en el percentil ${fmt(Math.min(comp1, comp4))} de las últimas 200 velas). Se acerca un movimiento fuerte; la dirección no la da la compresión.</div>`);
+  if (price < ema200d && D1.reg[i1] !== 1) notes.push(`<div class="alert w">El precio está por debajo de la EMA200 diaria (${fmt(ema200d)}). Los largos van contra la tendencia de fondo.</div>`);
+  $('context').innerHTML = `
+    <table>
+      <tr><td>Régimen diario (EMA20/50/200)</td><td class="r">${regText(D1.reg[i1])}</td></tr>
+      <tr><td>Tendencia 4h (EMA20/50)</td><td class="r">${regText(D1.tr4[i1])}</td></tr>
+      <tr><td>Régimen semanal</td><td class="r">${regText(D4.reg[i4])}</td></tr>
+      <tr><td>EMA200 diaria</td><td class="r">${fmt(ema200d)} <span class="mut">(${price >= ema200d ? '+' : ''}${pct(price / ema200d - 1)})</span></td></tr>
+      <tr><td>Máx / mín 24 h</td><td class="r">${fmt(hi24)} / ${fmt(lo24)}</td></tr>
+      <tr><td>Máx / mín 7 días</td><td class="r">${fmt(hi7)} / ${fmt(lo7)}</td></tr>
+      <tr><td>Bandas de Bollinger 4h</td><td class="r">${fmt(D4.i.bbLo[i4])} – ${fmt(D4.i.bbUp[i4])}</td></tr>
+      <tr><td>ATR 1h (volatilidad)</td><td class="r">${fmt(D1.i.atr[i1])} $ <span class="mut">(${pct(atrPct, 2)})</span></td></tr>
+      <tr><td>RSI 1h / 4h</td><td class="r">${fmt(D1.i.rsi[i1])} / ${fmt(D4.i.rsi[i4])}</td></tr>
+      <tr><td>Volumen diario vs media 20 d</td><td class="r">${fmt(volRatio, 2)}×</td></tr>
+    </table>${notes.join('')}`;
+}
+
+function renderPositioning() {
+  const d = S.data, tk = d.tick;
+  const fr = +tk.fundingRate, ratio = d.ratio, oi = d.oi;
+  const lr = ratio.length ? +ratio[ratio.length - 1].buyRatio : NaN;
+  const lr24 = ratio.length > 6 ? +ratio[ratio.length - 7].buyRatio : NaN;
+  const oiNow = oi.length ? +oi[oi.length - 1].openInterest : NaN, oi24 = oi.length > 6 ? +oi[oi.length - 7].openInterest : NaN;
+  const notes = [];
+  if (lr >= 0.65) notes.push(`<div class="alert w">${pct(lr, 0)} de las cuentas están en largo. Cuando la masa está tan cargada en un lado, el precio suele ir antes a por sus stops (barrido bajista).</div>`);
+  if (lr <= 0.4) notes.push(`<div class="alert w">Solo ${pct(lr, 0)} en largo: mercado cargado de cortos, riesgo de subida rápida por cierre forzado de cortos.</div>`);
+  if (fr >= 0.0003) notes.push(`<div class="alert w">Funding alto (${pct(fr, 3)} cada 8 h): largos apalancados y caros, euforia.</div>`);
+  if (fr <= -0.0001) notes.push(`<div class="alert i">Funding negativo: los cortos pagan. Suele aparecer cerca de suelos de corto plazo.</div>`);
+  if (!notes.length) notes.push('<div class="alert ok">Sin posicionamiento extremo.</div>');
+  $('positioning').innerHTML = `
+    <table>
+      <tr><td>Funding actual</td><td class="r">${pct(fr, 4)}</td></tr>
+      <tr><td>Cuentas en largo (ratio)</td><td class="r">${pct(lr, 1)} <span class="mut">(hace 24 h: ${pct(lr24, 1)})</span></td></tr>
+      <tr><td>Open interest</td><td class="r">${fmt(oiNow)} BTC <span class="${oiNow >= oi24 ? 'up' : 'dn'}">(${oiNow >= oi24 ? '+' : ''}${pct(oiNow / oi24 - 1)} 24 h)</span></td></tr>
+      <tr><td>Precio marca / índice</td><td class="r">${fmt(+tk.markPrice, 1)} / ${fmt(+tk.indexPrice, 1)}</td></tr>
+    </table>${notes.join('')}
+    <div class="small mut">El posicionamiento es contexto, no entra en las reglas de señal (Bybit solo guarda unos meses de historial y no se pudo validar).</div>`;
+}
+
+function renderRisk() {
+  const rp = +$('riskPct').value || 0, cap = +$('cap').value || 0, cur = $('cur').value;
+  let h = `<div class="sOnly" style="margin-top:8px;font-size:16px">Máximo que pierdes por operación: <b>${fmt(cap * rp / 100, 0)} ${cur}</b></div><table class="adv" style="margin-top:8px">
+    <tr><td>Pérdida máxima por operación</td><td class="r">${fmt(cap * rp / 100, 2)} ${cur}</td></tr>
+    <tr><td>Peor racha histórica (7 pérdidas)</td><td class="r dn">−${pct(1 - Math.pow(1 - rp / 100, 7))}</td></tr>
+    <tr><td>Caída máxima histórica estrategia principal</td><td class="r dn">≈ −${pct(0.156 * rp)}</td></tr>
+  </table>`;
+  if (rp > 2) h += `<div class="alert d">Riesgo por encima del 2 %: con las rachas que ha tenido este sistema, la cuenta puede caer más de un 13 % antes de recuperarse.</div>`;
+  if ($('streak2').checked) {
+    const at = store.get('streakAt', Date.now()), left = at + 24 * H - Date.now();
+    h += left > 0 ? `<div class="alert w">Pausa: quedan ${fmt(left / H, 1)} h.</div>` : `<div class="alert ok">Pausa cumplida. Desmarca la casilla para volver a operar.</div>`;
+  }
+  $('riskBox').innerHTML = h;
+}
+
+function renderStrats() {
+  $('strats').innerHTML = ESTRATEGIAS.map(st => `
+    <div style="margin-bottom:12px">
+      <b>${E.SETUPS[st.setup].nombre} (${st.tf})</b> <span class="pill ${st.color}">${st.confianza}</span>${st.alerta ? '' : ' <span class="pill mut">sin alerta</span>'}
+      <div class="small">${st.resumen}</div>
+      <div class="small mut">Bybit: ${st.v.bybit}<br>Binance: ${st.v.bin}<br>${st.v.oos}<br>${st.v.anual}</div>
+    </div>`).join('') + `<div class="small mut">R = lo que arriesgas por operación. +0,12R por operación con un 1 % de riesgo ≈ +0,12 % de la cuenta de media por operación.</div>`;
+}
+
+function renderRecent() {
+  const now = Date.now();
+  const rows = S.recent.filter(t => now - t.t < 30 * 24 * H).slice(0, 25);
+  if (!rows.length) { $('recent').innerHTML = '<p class="mut">Sin señales en los últimos 30 días.</p>'; return; }
+  const tot = rows.filter(r => r.st.alerta).reduce((a, r) => a + r.r, 0);
+  const label = { stop: 'stop', trailing: 'stop dinámico', breakeven: 'breakeven', tp2: 'TP2', tiempo: 'tiempo' };
+  $('recent').innerHTML = `<table><tr><th>Cierre vela</th><th>Estrategia</th><th>Lado</th><th class="r">Entrada</th><th>Salida</th><th class="r">R</th></tr>` +
+    rows.map(r => `<tr><td>${tstr(r.t + (r.st.tf === '4h' ? 4 : 1) * H)}</td><td>${r.st.id} ${r.st.tf}${r.st.alerta ? '' : ' <span class="mut">(exp.)</span>'}</td><td class="${r.side === 1 ? 'up' : 'dn'}">${r.side === 1 ? 'Largo' : 'Corto'}</td><td class="r">${fmt(r.entry)}</td><td>${label[r.reason] || r.reason}</td><td class="r ${r.r >= 0 ? 'up' : 'dn'}">${r.r >= 0 ? '+' : ''}${fmt(r.r, 2)}</td></tr>`).join('') +
+    `</table><div class="mut" style="margin-top:6px">Simulación con las mismas reglas sobre los últimos 30 días (solo operaciones ya cerradas). Total estrategias con alerta: <b class="${tot >= 0 ? 'up' : 'dn'}">${tot >= 0 ? '+' : ''}${fmt(tot, 2)}R</b>.</div>`;
+}
+
+function renderEvents() {
+  const now = Date.now(), ev = parseEvents();
+  $('eventsBox').innerHTML = ev.length ? '<ul>' + ev.map(e => {
+    const st = now >= e.t - 4 * H && now <= e.t + 2 * H ? '<span class="warn">bloqueando</span>' : now > e.t + 2 * H ? '<span class="mut">pasado</span>' : `<span class="mut">en ${fmt((e.t - now) / H, 0)} h</span>`;
+    return `<li>${new Date(e.t).toLocaleString('es-ES', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — ${e.d} · ${st}</li>`;
+  }).join('') + '</ul>' : '<p class="mut">Sin eventos.</p>';
+}
+
+function drawChart() {
+  const cv = $('chart'), dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight; if (!w) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  const D = S.data.D1h, n = 120, c = D.c.slice(-n), ema = D.i.ema20.slice(-n);
+  const sig = S.signals.find(s => s.st.tf === '1h') || S.signals[0];
+  let lo = Math.min(...c.map(x => x.l)), hi = Math.max(...c.map(x => x.h));
+  if (sig) { lo = Math.min(lo, sig.stop, sig.tp1); hi = Math.max(hi, sig.stop, sig.tp1); }
+  const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+  const L = 8, R = 62, T = 8, B = 18, cw = (w - L - R) / n;
+  const y = p => T + (hi - p) / (hi - lo) * (h - T - B);
+  g.font = '11px system-ui'; g.fillStyle = '#8b98a8'; g.strokeStyle = '#263040'; g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) { const p = lo + (hi - lo) * k / 4, yy = y(p); g.beginPath(); g.moveTo(L, yy); g.lineTo(w - R, yy); g.stroke(); g.fillText(fmt(p), w - R + 4, yy + 4); }
+  c.forEach((x, k) => {
+    const cx = L + k * cw + cw / 2, up = x.c >= x.o; g.strokeStyle = g.fillStyle = up ? '#26a269' : '#e5534b';
+    g.beginPath(); g.moveTo(cx, y(x.h)); g.lineTo(cx, y(x.l)); g.stroke();
+    const top = y(Math.max(x.o, x.c)), bh = Math.max(1, Math.abs(y(x.o) - y(x.c))); g.fillRect(cx - cw * 0.35, top, cw * 0.7, bh);
+  });
+  g.strokeStyle = '#4c8dff'; g.lineWidth = 1.5; g.beginPath();
+  ema.forEach((v, k) => { const cx = L + k * cw + cw / 2; k ? g.lineTo(cx, y(v)) : g.moveTo(cx, y(v)); }); g.stroke();
+  if (sig) {
+    for (const [p, col, lab] of [[sig.entry, '#e6edf3', 'Entrada'], [sig.stop, '#e5534b', 'Stop'], [sig.tp1, '#26a269', 'TP1']]) {
+      g.strokeStyle = col; g.setLineDash([5, 4]); g.beginPath(); g.moveTo(L, y(p)); g.lineTo(w - R, y(p)); g.stroke(); g.setLineDash([]);
+      g.fillStyle = col; g.fillText(lab, L + 4, y(p) - 3);
+    }
+  }
+}
+
+// ---------- Verificación de analistas ----------
+let AN = store.get('analistas', []);
+const anSave = () => { store.set('analistas', AN); $('anJson').value = JSON.stringify(AN); };
+$('anTime').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
+$('anAdd').addEventListener('click', () => {
+  const r = { id: Date.now(), name: $('anName').value.trim() || 'Analista', t: new Date($('anTime').value).getTime(), side: +$('anSide').value, type: $('anType').value,
+    entry: +$('anEntry').value, stop: +$('anStop').value, tp: +$('anTp').value };
+  const err = [];
+  if (!r.t || isNaN(r.t)) err.push('fecha'); if (!r.entry) err.push('entrada'); if (!r.stop) err.push('stop'); if (!r.tp) err.push('objetivo');
+  if (!err.length && (r.side === 1 ? !(r.stop < r.entry && r.tp > r.entry) : !(r.stop > r.entry && r.tp < r.entry))) err.push('el stop y el objetivo no cuadran con el lado elegido');
+  if (err.length) { $('anErr').innerHTML = `<div class="alert d">Revisa: ${err.join(', ')}.</div>`; return; }
+  $('anErr').innerHTML = ''; AN.push(r); anSave(); checkAnalysts();
+  $('anEntry').value = $('anStop').value = $('anTp').value = '';
+});
+$('anImport').addEventListener('click', () => { try { const x = JSON.parse($('anJson').value); if (Array.isArray(x)) { AN = x; anSave(); checkAnalysts(); } } catch (e) { $('anErr').innerHTML = '<div class="alert d">El texto no es una copia válida.</div>'; } });
+$('anCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('anJson').value); $('anCopy').textContent = 'Copiado'; } catch (e) { $('anJson').select(); } });
+window.anDel = id => { AN = AN.filter(x => x.id !== id); anSave(); renderAnalysts(); };
+
+async function candlesFrom(t0) { return klinesSince('15', 15 * 60e3, t0 - 15 * 60e3); } // velas de 15 min desde t0
+function evalSignal(r, cs) {
+  const s = r.side, risk = Math.abs(r.entry - r.stop), rr = Math.abs(r.tp - r.entry) / risk;
+  let active = r.type === 'mkt', k0 = 0;
+  const bars = cs.filter(x => x.t + 15 * 60e3 > r.t); // desde la vela en la que se dio la señal
+  if (!active) { for (; k0 < bars.length; k0++) { const b = bars[k0]; if (s === 1 ? b.l <= r.entry : b.h >= r.entry) { active = true; break; } } }
+  if (!active) return { st: 'pendiente', rr };
+  for (let k = k0; k < bars.length; k++) {
+    const b = bars[k], hitS = s === 1 ? b.l <= r.stop : b.h >= r.stop, hitT = s === 1 ? b.h >= r.tp : b.l <= r.tp;
+    if (hitS && hitT) return { st: 'stop', dudosa: true, r: -1, rr, at: b.t };
+    if (hitS) return { st: 'stop', r: -1, rr, at: b.t };
+    if (hitT) return { st: 'objetivo', r: rr, rr, at: b.t };
+  }
+  const last = bars[bars.length - 1]; return { st: 'abierta', rr, flot: last ? s * (last.c - r.entry) / risk : 0 };
+}
+async function checkAnalysts() {
+  if (!AN.length) { renderAnalysts(); return; }
+  try {
+    const t0 = Math.min(...AN.filter(r => !r.res || ['pendiente', 'abierta'].includes(r.res.st)).map(r => r.t), Date.now());
+    const cs = await candlesFrom(Math.max(t0, Date.now() - 60 * 24 * H));
+    for (const r of AN) if (!r.res || ['pendiente', 'abierta'].includes(r.res.st)) r.res = evalSignal(r, cs);
+    anSave();
+  } catch (e) { $('anErr').innerHTML = `<div class="alert d">No se pudieron comprobar las señales: ${e.message}</div>`; }
+  renderAnalysts();
+}
+function renderAnalysts() {
+  $('anList').innerHTML = [...new Set(AN.map(r => r.name))].map(n => `<option value="${n}">`).join('');
+  const names = [...new Set(AN.map(r => r.name))];
+  $('anSummary').innerHTML = names.length ? '<table><tr><th>Analista</th><th class="r">Cerradas</th><th class="r">Acierto</th><th class="r">Beneficio/riesgo medio</th><th class="r">R medio por operación</th><th class="r">R total</th><th>Lectura</th></tr>' + names.map(n => {
+    const cl = AN.filter(r => r.name === n && r.res && ['objetivo', 'stop'].includes(r.res.st));
+    const w = cl.filter(r => r.res.st === 'objetivo').length, tot = cl.reduce((a, r) => a + r.res.r, 0), rrm = cl.length ? cl.reduce((a, r) => a + r.res.rr, 0) / cl.length : 0;
+    const e = cl.length ? tot / cl.length : 0;
+    const lect = cl.length < 20 ? `<span class="mut">Muestra pequeña (${cl.length}/20): aún no concluyente</span>` : e > 0.3 ? '<span class="up">Ventaja clara</span>' : e > 0 ? '<span class="warn">Ventaja pequeña</span>' : '<span class="dn">Sin ventaja</span>';
+    return `<tr><td>${n}</td><td class="r">${cl.length}</td><td class="r">${cl.length ? pct(w / cl.length, 0) : '—'}</td><td class="r">${fmt(rrm, 2)}</td><td class="r ${e >= 0 ? 'up' : 'dn'}">${cl.length ? (e >= 0 ? '+' : '') + fmt(e, 2) + 'R' : '—'}</td><td class="r">${fmt(tot, 1)}R</td><td>${lect}</td></tr>`;
+  }).join('') + '</table><div class="small mut">Lo que dicen (60 % de acierto con 1:2–1:3) equivale a +0,8R a +1,4R por operación. Compáralo con la columna «R medio por operación».</div>' : '';
+  const lab = { pendiente: 'Entrada no activada', abierta: 'Abierta', objetivo: 'Objetivo', stop: 'Stop' };
+  $('anTable').innerHTML = AN.length ? '<table><tr><th>Fecha</th><th>Analista</th><th>Lado</th><th class="r">Entrada</th><th class="r">Stop</th><th class="r">Objetivo</th><th class="r">B/R</th><th>Resultado</th><th class="r">R</th><th></th></tr>' +
+    AN.slice().sort((a, b) => b.t - a.t).map(r => { const x = r.res || {}; return `<tr><td>${tstr(r.t)}</td><td>${r.name}</td><td class="${r.side === 1 ? 'up' : 'dn'}">${r.side === 1 ? 'Largo' : 'Corto'}${r.type === 'lim' ? ' (límite)' : ''}</td><td class="r">${fmt(r.entry)}</td><td class="r">${fmt(r.stop)}</td><td class="r">${fmt(r.tp)}</td><td class="r">${fmt(Math.abs(r.tp - r.entry) / Math.abs(r.entry - r.stop), 2)}</td><td>${lab[x.st] || 'Comprobando…'}${x.dudosa ? ' <span class="warn">(dudosa)</span>' : ''}${x.st === 'abierta' ? ` <span class="mut">(${x.flot >= 0 ? '+' : ''}${fmt(x.flot, 2)}R)</span>` : ''}</td><td class="r ${x.r >= 0 ? 'up' : 'dn'}">${x.r != null ? (x.r >= 0 ? '+' : '') + fmt(x.r, 2) : ''}</td><td><button class="sec small" onclick="anDel(${r.id})">Borrar</button></td></tr>`; }).join('') + '</table>' : '<p class="mut">Aún no hay señales apuntadas.</p>';
+}
+$('anJson').value = JSON.stringify(AN);
+renderAnalysts();
+setTimeout(checkAnalysts, 1500);
+setInterval(checkAnalysts, 5 * 60e3);
+
+// ---------- Elliott + Fibonacci ----------
+const W = window.BTCElliott;
+let EW = { tf: '60', counts: [], sel: 0, c: null };
+document.querySelectorAll('#ewTf button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ewTf button').forEach(x => x.classList.remove('on')); b.classList.add('on'); EW.tf = b.dataset.tf; runElliott();
+}));
+$('btnEw').addEventListener('click', () => runElliott());
+$('ewHist').addEventListener('change', () => renderElliott());
+$('ewOwn').addEventListener('change', () => renderElliott());
+$('ewAlt').addEventListener('change', () => { EW.sel = +$('ewAlt').value; renderElliott(); });
+const TFNAME = { '5': '5 min', '15': '15 min', '30': '30 min', '60': '1 hora', '120': '2 horas', '240': '4 horas', '720': '12 horas', 'D': 'diario', 'W': 'semanal' };
+
+// Vigilancia en directo: si el precio anula el recuento que estás viendo, avisa y recalcula
+function ewBroken(o, price) { // ¿el precio en directo ya ha superado el nivel de invalidación?
+  const last = o.points[o.points.length - 1], same = Math.abs(o.invalida.p - last.p) < 1e-6;
+  const up = same ? last.t === 'H' : o.invalida.p > last.p;
+  return !(same && last.prov) && (up ? price > o.invalida.p : price < o.invalida.p);
+}
+function ewKey(o) { return o ? o.nombre + o.points.map(p => p.i + ':' + Math.round(p.p)).join(',') : ''; }
+function ewShown() { const useNest = EW.nest && EW.nest.last && EW.nest.last.kind !== 'tramo' && $('ewHist') && $('ewHist').checked && !$('ewOwn').checked; return useNest ? EW.nest.last : EW.counts[EW.sel]; }
+async function ewLive() {
+  const o = ewShown();
+  const price = ewLivePrice();
+  if (o && price) {
+    if (ewBroken(o, price)) {
+      EW.anulado = { nombre: o.nombre, p: o.invalida.p, price, t: Date.now(), tf: EW.tf };
+      if (alertsOn) { beep(); try { if ('Notification' in window && Notification.permission === 'granted') new Notification('Elliott: recuento anulado', { body: `${o.nombre} (${TFNAME[EW.tf]}) anulado al tocar ${fmt(o.invalida.p)}. Recuento nuevo en el panel.` }); } catch (e) {} }
+      return runElliott(true);
+    }
+  }
+  // recalcula en silencio cuando cierra una vela nueva (1h/4h/1D con los datos ya cargados; el resto cada 5 min)
+  if (!EW.at || Date.now() - EW.at > 50e3) return runElliott(true); // recuento y objetivos nuevos cada minuto
+  renderElliott();
+}
+
+// ---------- Estructura anidada: grado mayor (temporalidad superior) + ondas internas en la temporalidad actual ----------
+const PARENT = { '5': '30', '15': '60', '30': '240', '60': '240', '120': 'D', '240': 'D', '720': 'W', 'D': 'W', 'W': null };
+const PC = {};
+async function parentCandles(tf) {
+  if (tf === '60' && S.data) return S.data.h1; if (tf === '240' && S.data) return S.data.h4; if (tf === 'D' && S.data) return S.data.d1; if (tf === 'W' && S.data) return S.data.w1;
+  if (PC[tf] && Date.now() - PC[tf].t < 5 * 60e3) return PC[tf].c;
+  const c = await klines(tf, 1000); PC[tf] = { t: Date.now(), c }; return c;
+}
+async function buildNest(c, tf) {
+  const ptf = PARENT[tf];
+  const pc = ptf ? (await parentCandles(ptf)).map(x => Object.assign({}, x)) : c;
+  if (ptf) { const lv = ewLivePrice(), x = pc[pc.length - 1]; if (lv && Math.abs(lv / x.c - 1) < 0.03) { x.c = lv; x.h = Math.max(x.h, lv); x.l = Math.min(x.l, lv); } } // vela en curso del grado mayor con el precio en directo
+  const atrP = E.computeIndicators(pc).atr, atrC = E.computeIndicators(c).atr;
+  const H = W.countHistory(pc, atrP, ptf ? 3 : 5);
+  if (!H.segs.length) return null;
+  // el último tramo debe seguir vigente con el precio actual; si no, el mejor recuento actual del grado mayor
+  const live = ewLivePrice();
+  let last = H.segs[H.segs.length - 1];
+  if (last.kind === 'tramo' || (live && ewBroken(last, live))) { const alt = W.countWaves(pc, atrP).filter(o => !ewBroken(o, live))[0]; if (alt) { H.segs[H.segs.length - 1] = alt; last = alt; } }
+  const stepP = ptf ? TFSEC[ptf] * 1000 : 0, c0 = c[0].t;
+  const map = p => { // punto del grado mayor → vela de esta temporalidad donde está el extremo
+    if (!ptf) return Object.assign({}, p);
+    const T = pc[Math.min(p.i, pc.length - 1)].t; if (T + stepP <= c0) return null;
+    let bi = -1;
+    for (let k = 0; k < c.length; k++) { if (c[k].t < T) continue; if (c[k].t >= T + stepP) break; if (bi < 0 || (p.t === 'H' ? c[k].h > c[bi].h : c[k].l < c[bi].l)) bi = k; }
+    if (bi < 0) return p.prov ? { i: c.length - 1, p: p.p, t: p.t, lab: p.lab, prov: true } : null;
+    return { i: bi, p: p.t === 'H' ? c[bi].h : c[bi].l, t: p.t, lab: p.lab, prov: p.prov };
+  };
+  const segs = [], subs = [], subs2 = [];
+  const recent = H.segs.slice(-20); // todos los tramos del grado mayor que caben en esta temporalidad
+  recent.forEach((sg, si) => {
+    const pts = sg.points.map(map);
+    segs.push({ nombre: sg.nombre, kind: sg.kind, pts });
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k]; if (!a || !b || b.i - a.i < 5) continue;
+      const inProg = si === recent.length - 1 && k === pts.length - 1 && !!b.prov;
+      const sd = W.subdivide(c, atrC, a.i, b.i, b.p > a.p ? 1 : -1, W.expectedLegs(sg, k), inProg);
+      if (sd) {
+        subs.push(Object.assign(sd, { parentLab: b.lab }));
+        // un grado más abajo en las ondas internas largas (para que no queden rectas sin estructura)
+        if (!sd.aprox) for (let q = 1; q < sd.points.length; q++) {
+          const x = sd.points[q - 1], y = sd.points[q]; if (y.i - x.i < 30) continue;
+          const lg = /^(i|iii|v|a|c)$/.test(y.lab) && !(sd.nombre || '').startsWith('Flat') ? 5 : 3;
+          const s2 = W.subdivide(c, atrC, x.i, y.i, y.p > x.p ? 1 : -1, /^(ii|iv|b)$/.test(y.lab) ? 3 : lg, false);
+          if (s2 && !s2.aprox) subs2.push(s2);
+        }
+      }
+    }
+  });
+  return { ptf: ptf || tf, segs, subs, subs2, last };
+}
+function nestTxt() {
+  const N = EW.nest; if (!N || !N.last) return EW.nestErr ? `<div class="alert w small">Estructura anidada no disponible (${EW.nestErr}). Se muestra el recuento de esta temporalidad.</div>` : '';
+  const L = N.last, labs = L.points.filter(p => p.lab && p.lab !== '0').map(p => p.lab).join('-');
+  const lastSub = N.subs.length ? N.subs[N.subs.length - 1] : null;
+  let t = `<div style="margin-top:8px"><b>Grado mayor (${TFNAME[N.ptf]}):</b> ${L.nombre} ${labs} — ${L.estado || ''}</div>`;
+  if (lastSub && N.ptf !== EW.tf) t += `<div><b>Dentro de la onda ${lastSub.parentLab || ''} (vista en ${TFNAME[EW.tf]}):</b> ${lastSub.nombre} ${lastSub.points.filter(p => p.lab).map(p => p.lab).join('-')}, vamos por la <b>${lastSub.points[lastSub.points.length - 1].lab}</b></div>`;
+  return `<div class="small">${t}</div>`;
+}
+
+async function runElliott(keep) {
+  const prevKey = keep ? ewKey(EW.counts[EW.sel]) : null;
+  if (!keep) EW.anulado = null;
+  $('ewMsg').textContent = 'Analizando…';
+  try {
+    let c;
+    if (!['60', '240', 'D'].includes(EW.tf)) c = await klines(EW.tf, 1000);
+    else if (S.data) c = EW.tf === '60' ? S.data.h1 : EW.tf === '240' ? S.data.h4 : S.data.d1;
+    else c = await klines(EW.tf, 1000);
+    const cAll = c.slice(-1001).map(x => Object.assign({}, x)); { const lv = ewLivePrice(), x = cAll[cAll.length - 1]; if (lv && Math.abs(lv / x.c - 1) < 0.03) { x.c = lv; x.h = Math.max(x.h, lv); x.l = Math.min(x.l, lv); } } c = cAll; // recuento con la vela en curso: los objetivos se mueven con el precio
+    const ind = E.computeIndicators(c);
+    const live = S.data ? +S.data.tick.lastPrice : null;
+    EW.cAll = cAll.map(x => Object.assign({}, x));
+    if (EW.wsBar && wsTf === EW.tf && EW.wsBar.t > EW.cAll[EW.cAll.length - 1].t) EW.cAll.push(Object.assign({}, EW.wsBar)); try { const atrH = E.computeIndicators(c).atr; EW.hist = [W.countHistory(c, atrH, 5), W.countHistory(c, atrH, 2.5)]; } catch (e) { EW.hist = null; }
+    try { EW.nest = await buildNest(c, EW.tf); EW.nestErr = EW.nest ? null : 'sin recuento del grado mayor'; } catch (e) { EW.nest = null; EW.nestErr = e.message; console.warn('Estructura anidada:', e); }
+    EW.c = c; EW.counts = W.countWaves(c, ind.atr).filter(o => !live || !ewBroken(o, live)).slice(0, 6); EW.at = Date.now();
+    const ks = EW.counts.findIndex(o => ewKey(o) === prevKey); EW.sel = ks >= 0 ? ks : 0;
+    ewStab(EW.tf, EW.nest && EW.nest.last ? EW.nest.last : EW.counts[0]);
+    $('ewAlt').innerHTML = EW.counts.map((o, k) => `<option value="${k}" ${k === EW.sel ? 'selected' : ''}>${k === 0 ? 'Principal' : 'Alternativo ' + k}: ${o.nombre} (${o.points.map(p => p.lab).join('-')}) · ${o.confianza}</option>`).join('');
+    $('ewMsg').textContent = `${TFNAME[EW.tf]} · ${EW.counts.length} recuentos válidos · ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
+  } catch (e) { $('ewMsg').textContent = 'Error: ' + e.message; EW.counts = []; }
+  renderElliott();
+  setTimeout(wsConnect, 0);
+}
+
+function ewLivePrice() { if (EW.wsPrice && Date.now() - EW.wsAt < 15000) return EW.wsPrice; return S.data ? +S.data.tick.lastPrice : (EW.cAll ? EW.cAll[EW.cAll.length - 1].c : 0); }
+let ewTrigAt = 0;
+function ewTrigger(p) { // dispara un recuento en cuanto el precio cambia el escenario (máx. uno cada 15 s)
+  const o = ewShown(); if (!o || !p || Date.now() - ewTrigAt < 15000 || Date.now() - (EW.at || 0) < 15000) return;
+  const lp = o.points[o.points.length - 1], tg = ewTargets(o, p).find(t => !t.hit);
+  const ext = lp && (lp.t === 'H' ? p > lp.p : p < lp.p);           // extremo nuevo: la onda en curso se alarga
+  const hit = EW.lastTgt && EW.lastTgt !== (tg ? tg.p : 0);        // ha tocado un objetivo
+  if (ewBroken(o, p) || ext || hit) { ewTrigAt = Date.now(); runElliott(true); }
+  EW.lastTgt = tg ? tg.p : 0;
+}
+function ewTargets(o, price) { // objetivos ordenados por cercanía; los ya superados por el precio se marcan como alcanzados
+  const lp = o.points[o.points.length - 1];
+  return o.objetivos.map(t => { const s = Math.sign(t.p - lp.p) || o.sesgo || 1; return { ...t, hit: (t.p - price) * s <= 0 }; }) // cada objetivo se mide desde el último punto del recuento, en su propia dirección.sort((a, b) => a.hit - b.hit || Math.abs(a.p - price) - Math.abs(b.p - price));
+}
+function ewPatchLive() { // la vela en curso se mueve con el precio en directo en todas las temporalidades
+  if (!EW.cAll || (EW.wsPrice && Date.now() - EW.wsAt < 15000)) return; const x = EW.cAll[EW.cAll.length - 1], p = ewLivePrice(); if (!p) return;
+  x.c = p; x.h = Math.max(x.h, p); x.l = Math.min(x.l, p);
+}
+function histTxt() {
+  if (!EW.hist || !EW.hist[0] || !EW.hist[0].segs.length) return '';
+  const d = t => new Date(EW.c[Math.min(t, EW.c.length - 1)].t).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+  return `<div class="small" style="margin-top:8px"><b>Recuento completo hacia atrás (grado mayor):</b> ` + EW.hist[0].segs.map(sg => `${sg.nombre.split(' (')[0]} <span class="mut">${d(sg.points[0].i)}–${d(sg.points[sg.points.length - 1].i)}</span>`).join(' → ') + '</div>';
+}
+// Fiabilidad MEDIDA del recuento automático (prueba sin mirar al futuro, Bybit, 10-nov-2026):
+// en cada vela se toma el recuento principal y se mira si el precio llega antes al primer objetivo o a la invalidación.
+// «azar» = lo que acertaría una dirección cualquiera con esas mismas distancias.
+const EW_CAL = {
+  '240': { n: 156, hit: 44, base: 48, meses: 16, estab: 71 },
+  '60': { n: 293, hit: 50, base: 48, meses: 8, estab: 72 }
+};
+function ewCalTxt(tf) {
+  const k = EW_CAL[tf] || EW_CAL[['5', '15', '30'].includes(tf) ? '60' : '240'];
+  const diff = k.hit - k.base;
+  return `${k.hit} % de acierto medido (al azar ${k.base} %) → ${Math.abs(diff) < 5 ? 'sin ventaja' : diff > 0 ? 'ligera ventaja' : 'peor que el azar'}`;
+}
+// Estabilidad: cuántas actualizaciones seguidas lleva el mismo recuento principal
+const EW_STAB = {};
+function ewStab(tf, o) {
+  if (!o) return 0; const key = o.nombre + '|' + Math.round(o.points[0].p) + '|' + o.points.length;
+  const r = EW_STAB[tf]; if (r && r.key === key) r.n++; else EW_STAB[tf] = { key, n: 1, since: Date.now() };
+  return EW_STAB[tf].n;
+}
+function anuladoBanner() {
+  const a = EW.anulado; if (!a || Date.now() - a.t > 6 * H) return '';
+  return `<div class="alert d">⚠️ ${tstr(a.t)}: el recuento anterior (${a.nombre}) quedó <b>anulado</b> al tocar ${fmt(a.p)}. Abajo tienes el recuento nuevo.</div>`;
+}
+function renderElliott() {
+  const useNest = EW.nest && EW.nest.last && EW.nest.last.kind !== 'tramo' && $('ewHist').checked && !$('ewOwn').checked;
+  const o = useNest ? EW.nest.last : EW.counts[EW.sel];
+  if (EW.cAll) $('ewNow').innerHTML = `<b>${TFNAME[EW.tf]}</b> · precio ahora <b>${fmt(ewLivePrice())}</b> · vela en curso desde ${new Date(EW.cAll[EW.cAll.length - 1].t).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+  if (!o && SIMPLE) { $('ewText').innerHTML = anuladoBanner() + '<div class="big">⚪ Sin ondas claras.</div><div class="mut">Prueba otra temporalidad.</div>'; drawElliott(null); return; }
+  if (!o) { $('ewText').innerHTML = '<p class="mut">No hay ningún recuento que cumpla las reglas en esta temporalidad. Con el mercado en rango, Elliott no da una lectura clara: prueba otra temporalidad.</p>'; drawElliott(null); return; }
+  ewPatchLive(); const price = ewLivePrice();
+  const op = o.operativa;
+  if (SIMPLE) {
+    const up = o.sesgo === 1;
+    const tgs = ewTargets(o, price), obj = tgs.find(t => !t.hit), done = tgs.filter(t => t.hit);
+    let h = `<div style="margin-bottom:4px"><b>${o.nombre}</b> · ${o.points.filter(p => p.lab !== '0').map(p => p.lab).join('-')}</div><div class="mut small" style="margin-bottom:6px">${o.estado}</div><div class="big ${up ? 'up' : 'dn'}">${up ? '⬆️ Escenario del recuento: subir' : '⬇️ Escenario del recuento: bajar'}</div>
+      <div class="lines">
+        <div class="k">Próximo objetivo</div><div><b>${obj ? fmt(obj.p) : 'todos alcanzados — esperando recuento nuevo'}</b>${obj ? ` <span class="mut">(${obj.p > price ? '+' : '−'}${Math.abs((obj.p / price - 1) * 100).toFixed(1).replace('.', ',')} %)</span>` : ''}</div>
+        ${done.length ? `<div class="k">Ya alcanzado</div><div class="up">✅ ${done.map(t => fmt(t.p)).join(' · ')}</div>` : ''}
+        <div class="k">Actualizado</div><div class="mut">${EW.at ? new Date(EW.at).toLocaleTimeString('es-ES') : '—'} (se recalcula cada minuto y al tocar un nivel)</div>
+        <div class="k">Se anula si toca</div><div class="warn"><b>${fmt(o.invalida.p)}</b></div>
+        ${o.confirma ? `<div class="k">Se confirma si toca</div><div style="color:#56d4dd"><b>${fmt(o.confirma.p)}</b></div>` : ''}
+        <div class="k">Fiabilidad</div><div>${ewCalTxt(EW.tf)}</div>
+        <div class="k">Estabilidad</div><div>${(() => { const st = EW_STAB[EW.tf]; const min = st ? Math.round((Date.now() - st.since) / 60e3) : 0; return min >= 60 ? 'recuento estable (sin cambios en ' + (min >= 120 ? Math.round(min / 60) + ' h' : min + ' min') + ')' : '<span class="warn">recuento reciente: puede cambiar</span>'; })()}</div>
+      </div>`;
+    if (op && op.zona && op.tp1) h += `<div style="margin-top:10px">Zona para entrar: <b>${fmt(Math.min(...op.zona))} – ${fmt(Math.max(...op.zona))}</b> · stop ${fmt(op.stop)}</div>`;
+    h += `<div class="mut" style="margin-top:8px">Sirve para entender el mercado. No es una orden.</div>`;
+    $('ewText').innerHTML = anuladoBanner() + h + (useNest ? nestTxt() : (EW.nestErr ? nestTxt() : '') + histTxt()); drawElliott(o); return;
+  }
+  const fibs = W.fibLevels(o.fib);
+  const sesgoTxt = o.sesgo === 1 ? '<span class="up">al alza</span>' : '<span class="dn">a la baja</span>';
+  let h = `<div style="margin-bottom:6px"><b style="font-size:14px">${o.nombre}</b> <span class="pill ${o.confianza === 'Alta' ? 'up' : o.confianza === 'Media' ? 'warn' : 'mut'}">Encaje con las reglas: ${o.confianza}</span></div>
+  <div class="alert w small">Fiabilidad medida del recuento automático en esta temporalidad: ${ewCalTxt(EW.tf)}. El «encaje» dice cuánto cumple las reglas de Elliott, no si acertará.</div>
+    <div>${o.estado}. Próximo movimiento esperado: ${sesgoTxt}.</div>
+    <ul class="chk">${o.chk.map(x => `<li><span class="${x.ok ? 'ok' : 'no'}">${x.ok ? '✓' : '✗'}</span> ${x.txt}</li>`).join('')}</ul>`;
+  if (op) {
+    h += `<div class="alert i"><b>${op.titulo}</b><br>${op.txt}`;
+    if (op.zona) {
+      const z0 = Math.min(...op.zona), z1 = Math.max(...op.zona), inZ = price >= z0 && price <= z1;
+      h += `<br><br>Zona: ${fmt(z0)} – ${fmt(z1)}${inZ ? ' <b>(el precio está dentro)</b>' : ''} · Stop: ${fmt(op.stop)}${op.tp1 ? ` · Objetivo 1: ${fmt(op.tp1)} · Objetivo 2: ${fmt(op.tp2)}` : ''}`;
+      if (op.tp1) {
+        const mid = (op.zona[0] + op.zona[1]) / 2, risk = Math.abs(mid - op.stop), rr = Math.abs(op.tp2 - mid) / risk;
+        const z = sizing({ risk, entry: mid });
+        h += `<br>Desde el centro de la zona: riesgo ${fmt(risk)} $ (${pct(risk / mid, 2)}) · beneficio/riesgo hasta el objetivo 2 ≈ ${fmt(rr, 1)} · tamaño con tu riesgo: ${fmt(z.qty, 4)} BTC`;
+      }
+    }
+    h += '</div>';
+  }
+  h += `<div><b>Objetivos</b> <span class="mut small">(actualizado ${EW.at ? new Date(EW.at).toLocaleTimeString('es-ES') : '—'})</span><ul>${ewTargets(o, price).map(t => `<li${t.hit ? ' class="mut"' : ''}>${t.hit ? '✅ ' : ''}${t.txt}: <b>${fmt(t.p)}</b>${t.hit ? ' — alcanzado' : ''}</li>`).join('')}</ul></div>`;
+  if (o.confirma) h += `<div class="alert i"><b>Confirmación:</b> ${fmt(o.confirma.p)} — ${o.confirma.txt}</div>`;
+  h += `<div class="alert w"><b>Invalidación${o.invalida.hard ? ' (regla)' : ' (guía)'}:</b> ${fmt(o.invalida.p)} — ${o.invalida.txt}</div>`;
+  if (fibs.length) h += `<div class="mut">Fibonacci (${o.fib.tipo === 'retroceso' ? 'retrocesos del último tramo' : 'extensiones'}): ${fibs.map(f => `${f.lab} ${fmt(f.p)}`).join(' · ')}</div>`;
+  h += `<div class="mut" style="margin-top:6px">Escala del zigzag: ${o.mult}×ATR. ${o.provisional ? 'El último punto es el extremo actual, sin confirmar: el recuento puede cambiar.' : 'Todos los puntos están confirmados.'}</div>`;
+  $('ewText').innerHTML = anuladoBanner() + h + (useNest ? nestTxt() : histTxt());
+  drawElliott(o);
+}
+
+// ---------- Gráfico profesional con las ondas encima (Lightweight Charts de TradingView, código abierto) ----------
+const LW = { chart: null, candle: null, wave: null, proj: null, ch1: null, ch2: null, sqz: null, macd: null, lines: [], tf: null };
+const TZ = -new Date().getTimezoneOffset() * 60; // el gráfico trabaja en UTC: se desplaza a tu hora
+const tsec = t => Math.floor(t / 1000) + TZ;
+function lwInit() {
+  if (LW.chart || !window.LightweightCharts) return !!LW.chart;
+  const box = $('lwBox'); box.style.display = 'block'; $('ewChart').style.display = 'none';
+  const L = window.LightweightCharts;
+  LW.chart = L.createChart(box, { autoSize: true, layout: { background: { color: '#0e1116' }, textColor: '#8b98a8' },
+    grid: { vertLines: { color: '#1a212b' }, horzLines: { color: '#1a212b' } }, rightPriceScale: { borderColor: '#263040', scaleMargins: { top: 0.06, bottom: 0.3 } },
+    timeScale: { borderColor: '#263040', timeVisible: true, rightOffset: 12 }, crosshair: { mode: 0 } });
+  LW.candle = LW.chart.addCandlestickSeries({ upColor: '#26a269', downColor: '#e5534b', borderVisible: false, wickUpColor: '#26a269', wickDownColor: '#e5534b' });
+  LW.wave = LW.chart.addLineSeries({ color: '#e6edf3', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.proj = LW.chart.addLineSeries({ color: 'rgba(126,226,168,0.9)', lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.ch1 = LW.chart.addLineSeries({ color: 'rgba(156,195,255,0.6)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.ch2 = LW.chart.addLineSeries({ color: 'rgba(156,195,255,0.6)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.h5 = LW.chart.addLineSeries({ color: 'rgba(86,212,221,0.75)', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.h3 = LW.chart.addLineSeries({ color: 'rgba(139,152,168,0.35)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.h2 = LW.chart.addLineSeries({ color: 'rgba(139,152,168,0.55)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  LW.pad = LW.chart.addLineSeries({ visible: false, priceLineVisible: false, lastValueVisible: false });
+  LW.sqz = LW.chart.addHistogramSeries({ priceScaleId: 'sqz', priceLineVisible: false, lastValueVisible: false });
+  LW.chart.priceScale('sqz').applyOptions({ scaleMargins: { top: 0.72, bottom: 0.15 } });
+  LW.macd = LW.chart.addHistogramSeries({ priceScaleId: 'macd', priceLineVisible: false, lastValueVisible: false });
+  LW.chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.87, bottom: 0 } });
+  return true;
+}
+function sqzMom(c) { // LazyBear: regresión lineal de (cierre − media de (máx/mín de 20 y SMA 20))
+  const n = 20, out = new Array(c.length).fill(null);
+  for (let i = 2 * n; i < c.length; i++) {
+    const ys = [];
+    for (let j = i - n + 1; j <= i; j++) { let hh = -Infinity, ll = Infinity, sm = 0; for (let k = j - n + 1; k <= j; k++) { hh = Math.max(hh, c[k].h); ll = Math.min(ll, c[k].l); sm += c[k].c; } ys.push(c[j].c - ((hh + ll) / 2 + sm / n) / 2); }
+    const xm = (n - 1) / 2, ym = ys.reduce((a, b) => a + b) / n; let num = 0, den = 0; ys.forEach((y, x) => { num += (x - xm) * (y - ym); den += (x - xm) ** 2; });
+    out[i] = ym + num / den * (n - 1 - xm);
+  }
+  return out;
+}
+function macdH(c) { const cl = c.map(x => x.c), f = E.ema(cl, 12), s = E.ema(cl, 26), m = f.map((v, i) => v - s[i]), sg = E.ema(m.map(x => isNaN(x) ? 0 : x), 9); return m.map((v, i) => isNaN(v) || isNaN(sg[i]) ? null : v - sg[i]); }
+const TFSEC = { '5': 300, '15': 900, '30': 1800, '60': 3600, '120': 7200, '240': 14400, '720': 43200, 'D': 86400, 'W': 604800 };
+function lwDraw(o) {
+  if (!lwInit() || !EW.cAll) return false;
+  const all = EW.cAll, step = TFSEC[EW.tf] || 3600, lastT = tsec(all[all.length - 1].t);
+  const future = Array.from({ length: 30 }, (_, k) => ({ time: lastT + (k + 1) * step }));
+  LW.candle.setData(all.map(x => ({ time: tsec(x.t), open: x.o, high: x.h, low: x.l, close: x.c })));
+  LW.pad.setData([{ time: tsec(all[0].t) }].concat(future));
+  const sq = sqzMom(all), md = macdH(all);
+  LW.sqz.setData(all.map((x, i) => sq[i] == null ? { time: tsec(x.t) } : { time: tsec(x.t), value: sq[i], color: sq[i] >= 0 ? (i && sq[i] > sq[i - 1] ? '#00e676' : '#1b7a3c') : (i && sq[i] < sq[i - 1] ? '#ff1744' : '#8a1c1c') }));
+  LW.macd.setData(all.map((x, i) => md[i] == null ? { time: tsec(x.t) } : { time: tsec(x.t), value: md[i], color: md[i] >= 0 ? 'rgba(38,162,105,0.7)' : 'rgba(229,83,75,0.7)' }));
+  LW.lines.forEach(l => { try { LW.candle.removePriceLine(l); } catch (e) {} }); LW.lines = [];
+  const pl = (price, color, title, style = 2, w = 1) => LW.lines.push(LW.candle.createPriceLine({ price, color, lineWidth: w, lineStyle: style, axisLabelVisible: true, title }));
+  const T = p => tsec(all[Math.min(p.i, all.length - 1)].t);
+  // recuento histórico completo en dos grados: mayor (cian, entre paréntesis) y menor (gris)
+  const markers = [], showH = $('ewHist') ? $('ewHist').checked : true;
+  const histLine = (h, ser) => {
+    if (!showH || !h) { ser.setData([]); return; }
+    const d = []; for (const sg of h.segs) for (const p of sg.points) { const t = T(p); if (!d.length || t > d[d.length - 1].time) d.push({ time: t, value: p.p }); }
+    ser.setData(d);
+  };
+  const N = EW.nest, nestOn = !!(showH && N && !($('ewOwn') && $('ewOwn').checked));
+  if (nestOn) {
+    const path = (arr, ser) => { const d = []; for (const p of arr) { if (!p) continue; const t = T(p); if (!d.length || t > d[d.length - 1].time) d.push({ time: t, value: p.p }); } ser.setData(d); };
+    path(N.segs.flatMap(sg => sg.pts), LW.h5);
+    path(N.subs.flatMap(sd => sd.points), LW.h2);
+    path((N.subs2 || []).flatMap(sd => sd.points), LW.h3);
+    (N.subs2 || []).forEach(sd => sd.points.slice(1, -1).forEach(p => { if (!p.lab) return; markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: '#6e7681', shape: 'circle', size: 0.1, text: { i: '1', ii: '2', iii: '3', iv: '4', v: '5' }[p.lab] || p.lab }); }));
+    N.segs.forEach(sg => sg.pts.slice(1).forEach(p => { if (!p || !p.lab || p.lab === '0' || p.lab === '?') return; markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: p.prov ? '#d29922' : '#56d4dd', shape: p.t === 'H' ? 'arrowDown' : 'arrowUp', size: 1.1, text: '(' + p.lab + ')' }); }));
+    N.subs.forEach(sd => sd.points.slice(1, sd.aprox ? undefined : -1).forEach(p => { if (!p.lab || p.lab === '·') return; markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: '#c9d1d9', shape: 'circle', size: 0.3, text: p.lab }); }));
+  } else {
+    LW.h3 && LW.h3.setData([]);
+    histLine(EW.hist && EW.hist[0], LW.h5); histLine(EW.hist && EW.hist[1], LW.h2);
+    if (showH && EW.hist) EW.hist.forEach((h, gi) => h.segs.forEach(sg => sg.points.slice(1).forEach(p => {
+      if (!p.lab || p.lab === '0') return;
+      markers.push({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: gi === 0 ? '#56d4dd' : '#8b98a8', shape: 'circle', size: gi === 0 ? 0.5 : 0.2, text: gi === 0 ? '(' + p.lab + ')' : p.lab });
+    })));
+  }
+  if (!o) { LW.wave.setData([]); LW.proj.setData([]); LW.ch1.setData([]); LW.ch2.setData([]); LW.candle.setMarkers(markers.sort((a, b) => a.time - b.time)); return true; }
+  const wv = []; if (!nestOn) for (const p of o.points) { const t = T(p); if (!wv.length || t > wv[wv.length - 1].time) wv.push({ time: t, value: p.p }); } // tiempos estrictamente crecientes
+  LW.wave.setData(wv);
+  LW.candle.setMarkers(markers.concat((nestOn ? [] : o.points).filter(p => p.lab !== '0').map(p => ({ time: T(p), position: p.t === 'H' ? 'aboveBar' : 'belowBar', color: p.prov ? '#d29922' : (/[WXYZ]/.test(p.lab) ? '#9cc3ff' : '#ffffff'), shape: p.t === 'H' ? 'arrowDown' : 'arrowUp', text: p.lab, size: /[a-e]/.test(p.lab) ? 0.6 : 1.2 }))).sort((a, b) => a.time - b.time));
+  const lpRaw = o.points[o.points.length - 1], lp = nestOn ? (N.segs[N.segs.length - 1].pts.filter(Boolean).slice(-1)[0] || lpRaw) : lpRaw;
+  const lvP = ewLivePrice() || lp.p, pend = ewTargets(o, lvP).filter(t => !t.hit), tgt = pend[0];
+  LW.proj.setData(tgt ? [{ time: T(lp), value: lp.p }, { time: lastT + 15 * step, value: tgt.p }] : []);
+  if (!nestOn && o.kind === 'impulso' && o.points.length >= 4) {
+    const P = o.points, five = P.length >= 5, a = five ? P[2] : P[0], b = five ? P[4] : P[2], q = five ? P[3] : P[1];
+    const m = (b.p - a.p) / Math.max(1, b.i - a.i), xEnd = all.length - 1 + 25, tEnd = lastT + 25 * step;
+    if (T(a) < tEnd) LW.ch1.setData([{ time: T(a), value: a.p }, { time: tEnd, value: a.p + m * (xEnd - a.i) }]);
+    LW.ch2.setData([{ time: T(q), value: q.p }, { time: tEnd, value: q.p + m * (xEnd - q.i) }]);
+  } else { LW.ch1.setData([]); LW.ch2.setData([]); }
+  // orden: solo los niveles del recuento que manda (grado mayor). Fibonacci, zona y stop solo en «Ver todo».
+  if (!SIMPLE) {
+    for (const f of W.fibLevels(o.fib)) pl(f.p, 'rgba(210,153,34,0.45)', 'Fib ' + f.lab, 1);
+    if (o.operativa && o.operativa.zona) { pl(Math.max(...o.operativa.zona), '#4c8dff', 'Zona entrada', 0); pl(Math.min(...o.operativa.zona), '#4c8dff', 'Zona entrada', 0); }
+    if (o.operativa && o.operativa.stop) pl(o.operativa.stop, '#e5534b', 'Stop', 2, 2);
+  }
+  pend.slice(0, 2).forEach((t, k) => pl(t.p, '#7ee2a8', 'Objetivo ' + (k + 1) + (nestOn ? ' (' + TFNAME[N.ptf] + ')' : ''), 2));
+  pl(o.invalida.p, '#f0883e', 'Invalidación' + (nestOn ? ' (' + TFNAME[N.ptf] + ')' : ''), 1, 2);
+  if (o.confirma) pl(o.confirma.p, '#56d4dd', 'Confirmación' + (nestOn ? ' (' + TFNAME[N.ptf] + ')' : ''), 1, 2);
+  if (LW.tf !== EW.tf + ewKey(o)) { LW.tf = EW.tf + ewKey(o); const from = Math.max(0, o.points[0].i - 30); LW.chart.timeScale().setVisibleRange({ from: tsec(all[from].t), to: lastT + 20 * step }); }
+  return true;
+}
+
+function drawElliott(o) {
+  if (window.LightweightCharts) { try { if (lwDraw(o)) return; } catch (e) { console.warn('Gráfico avanzado no disponible:', e); } }
+  const cv = $('ewChart'), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (!w || !EW.cAll) return;
+  ewPatchLive(); const now = ewLivePrice();
+  cv.width = w * dpr; cv.height = h * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  const all = EW.cAll; const first = o ? Math.max(0, o.points[0].i - 25) : all.length - 150;
+  const from = Math.max(0, Math.min(first, all.length - 80)), c = all.slice(from), n = c.length;
+  const extra = []; if (o) { o.points.forEach(p => extra.push(p.p)); o.objetivos.forEach(t => extra.push(t.p)); extra.push(o.invalida.p); if (o.confirma) extra.push(o.confirma.p); if (o.operativa && o.operativa.zona) { extra.push(...o.operativa.zona, o.operativa.stop); if (o.operativa.tp2) extra.push(o.operativa.tp2); } }
+  let lo = Math.min(...c.map(x => x.l), ...extra), hi = Math.max(...c.map(x => x.h), ...extra);
+  const pad = (hi - lo) * 0.05; lo -= pad; hi += pad;
+  const L = 6, R = 70, T = 10, B = 22, rightSpace = 0.12, cw = (w - L - R) * (1 - rightSpace) / n;
+  const X = k => L + k * cw + cw / 2, Y = p => T + (hi - p) / (hi - lo) * (h - T - B), xEnd = w - R;
+  g.font = '11px system-ui'; g.lineWidth = 1;
+  for (let k = 0; k <= 5; k++) { const p = lo + (hi - lo) * k / 5; g.strokeStyle = '#1d2531'; g.beginPath(); g.moveTo(L, Y(p)); g.lineTo(xEnd, Y(p)); g.stroke(); g.fillStyle = '#8b98a8'; g.fillText(fmt(p), xEnd + 4, Y(p) + 4); }
+  const hl = (p, col, lab, dash) => { g.strokeStyle = col; g.setLineDash(dash || []); g.beginPath(); g.moveTo(L, Y(p)); g.lineTo(xEnd, Y(p)); g.stroke(); g.setLineDash([]); if (lab) { g.fillStyle = col; g.fillText(lab, xEnd - g.measureText(lab).width - 4, Y(p) - 3); } };
+  if (o) {
+    if (o.operativa && o.operativa.zona) { const a = Y(Math.max(...o.operativa.zona)), b = Y(Math.min(...o.operativa.zona)); g.fillStyle = 'rgba(76,141,255,0.15)'; g.fillRect(L, a, xEnd - L, b - a); g.fillStyle = '#9cc3ff'; g.fillText('Zona de entrada (curso)', L + 4, a + 12); }
+    for (const f of W.fibLevels(o.fib)) hl(f.p, 'rgba(210,153,34,0.55)', 'Fib ' + f.lab, [3, 4]);
+  }
+  c.forEach((x, k) => { const up = x.c >= x.o; g.strokeStyle = g.fillStyle = up ? '#26a269' : '#e5534b'; g.beginPath(); g.moveTo(X(k), Y(x.h)); g.lineTo(X(k), Y(x.l)); g.stroke(); g.fillRect(X(k) - Math.max(0.5, cw * 0.35), Y(Math.max(x.o, x.c)), Math.max(1, cw * 0.7), Math.max(1, Math.abs(Y(x.o) - Y(x.c)))); });
+  // eje de tiempo
+  const tf = EW.tf, fmtT = t => { const d = new Date(t); return ['D', 'W', '720'].includes(tf) ? d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ['240', '120'].includes(tf) ? d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit' }) + 'h' : d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); };
+  g.font = '10px system-ui'; g.fillStyle = '#8b98a8'; const step = Math.max(1, Math.ceil(n / 6));
+  for (let k = 0; k < n; k += step) { const lab = fmtT(c[k].t); g.fillText(lab, Math.min(X(k) - g.measureText(lab).width / 2, xEnd - 60), h - 6); }
+  // precio en directo
+  g.font = '11px system-ui'; hl(now, '#4c8dff', '', [1, 2]); g.fillStyle = '#4c8dff'; g.fillRect(xEnd + 1, Y(now) - 8, R - 2, 16); g.fillStyle = '#fff'; g.fillText(fmt(now), xEnd + 4, Y(now) + 4);
+  if (!o) return;
+  if (o.operativa && o.operativa.stop) hl(o.operativa.stop, '#e5534b', 'Stop', [6, 3]);
+  if (o.operativa && o.operativa.tp1) { hl(o.operativa.tp1, '#26a269', 'Objetivo 1', [6, 3]); hl(o.operativa.tp2, '#26a269', 'Objetivo 2', [6, 3]); }
+  hl(o.invalida.p, '#f0883e', 'Invalidación', [2, 3]);
+  if (o.confirma) hl(o.confirma.p, '#56d4dd', 'Confirmación', [2, 3]);
+  // objetivos como marcas a la derecha
+  const xr = X(n - 1) + 10;
+  for (const t of o.objetivos) { g.strokeStyle = '#7ee2a8'; g.beginPath(); g.moveTo(xr, Y(t.p)); g.lineTo(xr + 18, Y(t.p)); g.stroke(); }
+  // canal de Prechter: línea 2–4 y paralela por la 3 (o 0–2 y paralela por la 1 si la 3 está en curso)
+  if (o.kind === 'impulso' && o.points.length >= 4) {
+    const P = o.points, five = P.length >= 5, a = five ? P[2] : P[0], b = five ? P[4] : P[2], q = five ? P[3] : P[1];
+    const m = (b.p - a.p) / Math.max(1, b.i - a.i), x1 = all.length - 1 + 15;
+    g.strokeStyle = 'rgba(156,195,255,0.6)'; g.setLineDash([5, 4]);
+    const seg = (i0, p0) => { g.beginPath(); g.moveTo(X(i0 - from), Y(p0)); g.lineTo(X(x1 - from), Y(p0 + m * (x1 - i0))); g.stroke(); };
+    seg(a.i, a.p); seg(q.i, q.p); g.setLineDash([]);
+    g.fillStyle = '#9cc3ff'; g.font = '11px system-ui'; g.fillText('Canal', X(q.i - from) + 4, Y(q.p) - 4);
+  }
+  // recuento
+  g.strokeStyle = '#e6edf3'; g.lineWidth = 2; g.beginPath();
+  o.points.forEach((p, k) => { const x = X(p.i - from), y = Y(p.p); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.lineWidth = 1;
+  // proyección de la siguiente onda hacia el primer objetivo
+  const lp = o.points[o.points.length - 1]; if (o.objetivos[0]) { g.strokeStyle = 'rgba(126,226,168,0.8)'; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(X(lp.i - from), Y(lp.p)); g.lineTo(xr, Y(o.objetivos[0].p)); g.stroke(); g.setLineDash([]); }
+  g.font = 'bold 13px system-ui';
+  o.points.forEach((p, k) => { const x = X(p.i - from), up = p.t === 'H', y = Y(p.p) + (up ? -8 : 18);
+    const lab = p.lab === '0' ? '' : p.lab; if (!lab) return;
+    g.fillStyle = '#0e1116'; const tw = g.measureText(lab).width; g.fillRect(x - tw / 2 - 3, y - 12, tw + 6, 16);
+    g.fillStyle = p.prov ? '#d29922' : '#ffffff'; g.fillText(lab, x - tw / 2, y); });
+}
+window.addEventListener('resize', () => { if (EW.c) drawElliott(EW.counts[EW.sel]); });
+
+// ---------- Revalidación ----------
+$('btnVal').addEventListener('click', async () => {
+  const box = $('valBox'), btn = $('btnVal'); btn.disabled = true;
+  try {
+    const start = Date.UTC(2022, 0, 1);
+    box.textContent = 'Descargando 1h…';
+    const h1 = await klinesSince('60', H, start, n => box.textContent = `Descargando 1h… ${n} velas`);
+    box.textContent = 'Descargando 4h, diario y semanal…';
+    const h4 = await klinesSince('240', 4 * H, start - 220 * 4 * H);
+    const d1 = await klinesSince('D', 24 * H, start - 420 * 24 * H);
+    const w1 = await klines('W', 1000);
+    box.textContent = 'Calculando…';
+    await new Promise(r => setTimeout(r, 30));
+    const D1 = E.prepare(h1, h4, d1, H, 4 * H, 24 * H);
+    const D4 = E.prepare(h4.filter(x => x.t >= Date.UTC(2021, 6, 1)), d1, w1, 4 * H, 24 * H, 168 * H);
+    const f = s => s.n ? `${s.n} ops · ${pct(s.winRate, 0)} acierto · ${s.expR >= 0 ? '+' : ''}${fmt(s.expR, 2)}R/op · PF ${fmt(s.pf, 2)} · caída máx. ${pct(s.maxDD, 1)}` : 'sin operaciones';
+    let html = '<table><tr><th>Estrategia</th><th>Ajuste (70 %)</th><th>Validación (30 %)</th><th>Últimos 12 meses</th><th>Veredicto</th></tr>';
+    for (const st of ESTRATEGIAS) {
+      const D = st.tf === '4h' ? D4 : D1, c = D.c, cut = Math.floor(c.length * 0.7);
+      const is = E.stats(E.backtest(D, st.setup, st.p, st.mgmt, 220, cut));
+      const oos = E.stats(E.backtest(D, st.setup, st.p, st.mgmt, cut, c.length));
+      const y12i = c.findIndex(x => x.t >= Date.now() - 365 * 24 * H);
+      const y12 = E.stats(E.backtest(D, st.setup, st.p, st.mgmt, Math.max(220, y12i), c.length));
+      const ok = is.expR > 0 && oos.expR > 0;
+      html += `<tr><td>${E.SETUPS[st.setup].nombre} (${st.tf})</td><td>${f(is)}</td><td>${f(oos)}</td><td>${f(y12)}</td><td>${ok ? (y12.expR > 0 ? '<span class="up">Sigue válida</span>' : '<span class="warn">Válida pero floja este año</span>') : '<span class="dn">No operar</span>'}</td></tr>`;
+    }
+    box.innerHTML = html + `</table><div class="mut" style="margin-top:6px">${h1.length} velas de 1h desde ${new Date(h1[0].t).toLocaleDateString('es-ES')}. Revalidado ${new Date().toLocaleString('es-ES')}.</div>`;
+  } catch (e) { box.innerHTML = `<div class="alert d">Error al revalidar: ${e.message}</div>`; }
+  btn.disabled = false;
+});
+
+// ---------- Lectura continua multigrado ----------
+const GRADOS = [
+  { tf: 'W', nom: 'Semanal', grado: 'Ciclo', lab: { imp: ['', 'I', 'II', 'III', 'IV', 'V'], abc: ['', 'a', 'b', 'c'], tri: ['', 'a', 'b', 'c', 'd', 'e'] } },
+  { tf: 'D', nom: 'Diario', grado: 'Primario', lab: { imp: ['', '①', '②', '③', '④', '⑤'], abc: ['', 'Ⓐ', 'Ⓑ', 'Ⓒ'], tri: ['', 'Ⓐ', 'Ⓑ', 'Ⓒ', 'Ⓓ', 'Ⓔ'] } },
+  { tf: '240', nom: '4 horas', grado: 'Intermedio', lab: { imp: ['', '(1)', '(2)', '(3)', '(4)', '(5)'], abc: ['', '(A)', '(B)', '(C)'], tri: ['', '(A)', '(B)', '(C)', '(D)', '(E)'] } },
+  { tf: '60', nom: '1 hora', grado: 'Menor', lab: { imp: ['', '1', '2', '3', '4', '5'], abc: ['', 'A', 'B', 'C'], tri: ['', 'A', 'B', 'C', 'D', 'E'] } },
+  { tf: '15', nom: '15 min', grado: 'Minuto', lab: { imp: ['', 'i', 'ii', 'iii', 'iv', 'v'], abc: ['', 'a', 'b', 'c'], tri: ['', 'a', 'b', 'c', 'd', 'e'] } }
+];
+function mdDescribe(o, G) {
+  if (o.kind === 'compleja') {
+    const last = o.points[o.points.length - 1], labs = o.points.slice(1).map(p => p.lab).filter(l => /[WXYZ]/.test(l));
+    return { txt: `${o.nombre} · ${last.prov ? 'en curso' : 'hasta'} ${last.lab === 'b' ? 'la Y (falta su c)' : 'la ' + last.lab}`, seq: labs.join('-') };
+  }
+  const kind = o.kind === 'impulso' ? 'imp' : o.kind === 'triangulo' ? 'tri' : 'abc', L = G.lab[kind], n = o.points.length - 1;
+  const last = o.points[n], dirTxt = o.dir === 1 ? 'alcista' : 'bajista';
+  const now = last.prov ? `en curso la onda <b>${L[n]}</b>${(kind === 'imp' && n === 5) || (kind === 'abc' && n === 3) ? ' (puede estar terminando)' : ''}` : (kind === 'imp' && n === 5 ? 'impulso <b>terminado</b>' : kind === 'abc' && n === 3 ? 'corrección <b>terminada</b>' : `empieza la onda <b>${L[n + 1] || '?'}</b>`);
+  return { txt: `${o.nombre} ${kind === 'imp' ? dirTxt : ''} · ${now}`, seq: o.points.slice(1).map((p, k) => L[k + 1]).join('-') };
+}
+async function mdRun() {
+  const box = $('mdBox'); if (!S.data) return;
+  try {
+    const price = ewLivePrice(), out = [];
+    for (const G of GRADOS) {
+      let c = G.tf === 'W' ? S.data.w1 : G.tf === 'D' ? S.data.d1 : G.tf === '240' ? S.data.h4 : G.tf === '60' ? S.data.h1 : (MD15 && Date.now() - MD15.t < 5 * 60e3 ? MD15.c : (MD15 = { t: Date.now(), c: await klines('15', 1000) }).c);
+      c = c.slice(0, -1).slice(-400);
+      const o = W.countWaves(c, E.computeIndicators(c).atr).filter(x => !ewBroken(x, price))[0];
+      out.push({ G, o });
+    }
+    // coherencia: el grado menor debería ir en la dirección del movimiento en curso del grado mayor, o ser una corrección contra él
+    let html = '<div class="small" style="display:grid;gap:6px">';
+    out.forEach(({ G, o }, k) => {
+      if (!o) { html += `<div><b>${G.nom}</b> <span class="mut">(${G.grado})</span>: sin estructura clara</div>`; return; }
+      const d = mdDescribe(o, G), up = o.sesgo === 1;
+      const parent = (out.slice(0, k).reverse().find(x => x.o) || {}).o;
+      const rel = parent ? (o.sesgo === parent.sesgo ? '<span class="up">a favor del grado mayor</span>' : '<span class="warn">corrección dentro del grado mayor</span>') : '<span class="mut">dirección de fondo</span>';
+      html += `<div style="border-left:3px solid ${up ? 'var(--up)' : 'var(--dn)'};padding-left:8px">
+        <b>${G.nom}</b> <span class="mut">(grado ${G.grado}: ${d.seq})</span> ${up ? '⬆️' : '⬇️'}<br>${d.txt} · ${rel}<br>
+        <span class="mut">Se anula en ${fmt(o.invalida.p)}${o.confirma ? ` · se confirma en ${fmt(o.confirma.p)}` : ''}</span></div>`;
+    });
+    html += '</div>';
+    // resumen: lectura de arriba abajo y el nivel de anulación más cercano
+    const val = out.filter(x => x.o), ups = val.filter(x => x.o.sesgo === 1).length, dns = val.length - ups;
+    const near = val.map(x => ({ G: x.G, p: x.o.invalida.p })).sort((a, b) => Math.abs(a.p - price) - Math.abs(b.p - price))[0];
+    const big = val.find(x => x.G.tf === 'D' || x.G.tf === 'W'), small = val.slice().reverse().find(x => x.G.tf === '60' || x.G.tf === '15');
+    let sum = '';
+    if (big && small) sum = big.o.sesgo === small.o.sesgo
+      ? `Los grados mayores y menores <b>van en la misma dirección (${big.o.sesgo === 1 ? 'arriba' : 'abajo'})</b>: el movimiento corto empuja a favor de la onda grande.`
+      : `El grado mayor apunta <b>${big.o.sesgo === 1 ? 'arriba' : 'abajo'}</b> y los menores <b>${small.o.sesgo === 1 ? 'arriba' : 'abajo'}</b>: lo de corto plazo es una corrección dentro de la onda grande. Lo normal es que, al terminar, el precio retome la dirección del grado mayor.`;
+    box.innerHTML = `<div class="big">${ups > dns ? '⬆️' : dns > ups ? '⬇️' : '↔️'} ${ups} grados al alza · ${dns} a la baja</div>
+      <div style="margin-bottom:10px">${sum}${near ? ` Nivel más cercano que cambiaría la lectura: <b>${fmt(near.p)}</b> (${near.G.nom}).` : ''}</div>${html}
+      <div class="alert w small" style="margin-top:8px">Lectura de estructura, no predicción. Medido en el histórico, el recuento automático acierta la dirección como el azar (4h: 44 % frente a 48 %; 1h: 50 % frente a 48 %). Úsalo para saber dónde estás y qué nivel cambia la lectura.</div>
+      <div class="mut small" style="margin-top:6px">Precio ${fmt(price)} · ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} · se actualiza cada minuto</div>`;
+  } catch (e) { box.innerHTML = `<div class="alert d">No se pudo calcular: ${e.message}</div>`; }
+}
+let MD15 = null;
+$('mdBtn').addEventListener('click', () => { MD15 = null; mdRun(); });
+
+// ---------- Mi operación: confirmar entrada, seguimiento en directo y diario ----------
+const POS = { open: store.get('posOpen', []), log: store.get('posLog', []), skip: store.get('posSkip', []) };
+const posSave = () => { store.set('posOpen', POS.open); store.set('posLog', POS.log); store.set('posSkip', POS.skip); };
+const capUsd = () => (+$('cap').value || 0) * (S.fx || 1);
+function posForm(box, d) { // formulario de confirmación con los datos de la señal ya rellenos (se pueden cambiar)
+  box.innerHTML = `<div class="row" style="margin-top:8px;align-items:flex-end">
+    <div><label>Lado</label><select class="pf-side"><option value="1" ${d.side === 1 ? 'selected' : ''}>Compra (largo)</option><option value="-1" ${d.side === -1 ? 'selected' : ''}>Venta (corto)</option></select></div>
+    <div><label>Precio de entrada</label><input class="pf-entry" type="number" step="1" value="${Math.round(d.entry || '')}" style="width:100px"></div>
+    <div><label>Stop</label><input class="pf-stop" type="number" step="1" value="${Math.round(d.stop || '')}" style="width:100px"></div>
+    <div><label>Objetivo</label><input class="pf-tp" type="number" step="1" value="${d.tp1 ? Math.round(d.tp1) : ''}" style="width:100px"></div>
+    <div><label>Tamaño (USD de exposición)</label><input class="pf-usd" type="number" step="10" value="${Math.round(d.usd || '')}" style="width:110px"></div>
+    <div><button class="pf-ok">Guardar</button> <button class="sec pf-no">Cancelar</button></div></div>`;
+  box.querySelector('.pf-no').onclick = () => { box.innerHTML = ''; };
+  box.querySelector('.pf-ok').onclick = () => {
+    const side = +box.querySelector('.pf-side').value, entry = +box.querySelector('.pf-entry').value, stop = +box.querySelector('.pf-stop').value, tp = +box.querySelector('.pf-tp').value || null, usd = +box.querySelector('.pf-usd').value;
+    if (!entry || !stop || !usd || (stop - entry) * side >= 0) { alertBox(box, 'Revisa los datos: el stop tiene que estar por debajo de la entrada en una compra y por encima en una venta.'); return; }
+    POS.open.push({ id: Date.now(), k: d.k || null, src: d.src || 'manual', side, entry, stop, stop0: stop, tp, qty: usd / entry, t: Date.now(), half: false, be: false });
+    posSave(); box.innerHTML = ''; posRender(); render();
+  };
+}
+function alertBox(box, txt) { let a = box.querySelector('.pf-err'); if (!a) { a = document.createElement('div'); a.className = 'alert d small pf-err'; box.appendChild(a); } a.textContent = txt; }
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('.posIn, .posSkip'); if (!b) return;
+  const k = b.dataset.k, sg = S.signals.find(x => `${x.st.id}|${x.barT}` === k); if (!sg) return;
+  const box = document.querySelector(`.posForm[data-k="${k}"]`);
+  if (b.classList.contains('posSkip')) { POS.skip.push({ k, t: Date.now(), side: sg.side, entry: sg.entry, stop: sg.stop, tp1: sg.tp1, st: sg.st.id }); POS.skip = POS.skip.slice(-100); posSave(); if (box) box.innerHTML = '<div class="mut small">Anotado: no entraste. Se guarda para comparar después qué habría pasado.</div>'; return; }
+  const z = sizing(sg); posForm(box, { k, src: sg.st.id, side: sg.side, entry: NOW.p || sg.entry, stop: sg.stop, tp1: sg.tp1, usd: z.notionalUsd });
+});
+$('posAdd').addEventListener('click', () => { const p = NOW.p || (S.data ? +S.data.tick.lastPrice : 0); posForm($('posFormManual'), { side: 1, entry: p, stop: p * 0.99, tp1: p * 1.02, usd: Math.min(+$('buyPow').value || 0, capUsd() * 0.01 / 0.01) }); });
+function posAction(id, act) {
+  const k = POS.open.findIndex(x => x.id === id); if (k < 0) return; const o = POS.open[k], p = NOW.p || (S.data ? +S.data.tick.lastPrice : o.entry);
+  if (act === 'be') { o.stop = o.entry; o.be = true; }
+  if (act === 'half') { const q = o.qty / 2; POS.log.unshift({ ...o, qty: q, exit: p, tOut: Date.now(), parcial: true }); o.qty = q; o.half = true; }
+  if (act === 'close') {
+    const inp = document.querySelector(`.pc-exit[data-id="${id}"]`); const exit = inp && +inp.value ? +inp.value : p;
+    POS.log.unshift({ ...o, exit, tOut: Date.now() }); POS.open.splice(k, 1);
+  }
+  POS.log = POS.log.slice(0, 200); posSave(); posRender();
+}
+document.addEventListener('click', ev => { const b = ev.target.closest('[data-pact]'); if (!b) return; posAction(+b.dataset.id, b.dataset.pact); });
+const posWarned = {};
+function posRender() {
+  const p = NOW.p || (S.data ? +S.data.tick.lastPrice : null), cur = $('cur').value, cu = capUsd();
+  if (!POS.open.length) $('posBox').innerHTML = '<p class="mut">No tienes ninguna operación abierta. Cuando entres en una, pulsa «He entrado» en la señal o añádela a mano.</p>';
+  else $('posBox').innerHTML = POS.open.map(o => {
+    const pnl = p ? (p - o.entry) * o.side * o.qty : 0, R = Math.abs(o.entry - o.stop0) * o.qty, r = R ? pnl / R : 0;
+    const notional = o.qty * (p || o.entry), liq = o.entry * (1 - o.side * (cu / (o.qty * o.entry)));
+    const toStop = p ? Math.abs(p - o.stop) / p * 100 : 0, toTp = p && o.tp ? (o.tp - p) * o.side / p * 100 : null;
+    const hitStop = p && (p - o.stop) * o.side <= 0, hitTp = p && o.tp && (p - o.tp) * o.side >= 0;
+    let todo = '';
+    if (hitStop) todo = `<div class="alert d"><b>El precio ha tocado tu stop (${fmt(o.stop)}).</b> Si Quantfury no lo cerró, ciérrala ya.</div>`;
+    else if (hitTp && !o.half) todo = `<div class="alert ok"><b>Objetivo alcanzado.</b> Cierra la mitad y pon el stop en la entrada (${fmt(o.entry)}).</div>`;
+    else if (r >= 1 && !o.be) todo = `<div class="alert i">Vas +1R: mueve el stop a la entrada (${fmt(o.entry)}). Así ya no puedes perder.</div>`;
+    else if (o.be) todo = `<div class="alert ok small">Stop en la entrada: esta operación ya no puede perder.</div>`;
+    const key = o.id + (hitStop ? 's' : hitTp ? 't' : r >= 1 ? 'r' : '');
+    if ((hitStop || hitTp || r >= 1) && !posWarned[key] && alertsOn) { posWarned[key] = 1; beep(); try { if (Notification.permission === 'granted') new Notification('Tu operación BTC', { body: hitStop ? 'Ha tocado el stop' : hitTp ? 'Objetivo alcanzado: cierra la mitad' : 'Vas +1R: stop a la entrada' }); } catch (e) {} }
+    return `<div class="sig ${o.side === 1 ? 'long' : 'short'}" style="margin-bottom:10px">
+      <div class="big ${pnl >= 0 ? 'up' : 'dn'}">${o.side === 1 ? 'LARGO' : 'CORTO'} · ${pnl >= 0 ? '+' : ''}${fmt(pnl / (S.fx || 1), 2)} ${cur} <span style="font-size:15px">(${r >= 0 ? '+' : ''}${r.toFixed(2).replace('.', ',')}R · ${pnl >= 0 ? '+' : ''}${(pnl / cu * 100).toFixed(1).replace('.', ',')} % de la cuenta)</span></div>
+      <div class="lines">
+        <div class="k">Entrada</div><div>${fmt(o.entry)} · ${fmt(o.qty, 4)} BTC (≈ ${fmt(notional)} $, ×${(notional / cu).toFixed(1).replace('.', ',')})</div>
+        <div class="k">Precio ahora</div><div><b>${p ? fmt(p, 1) : '—'}</b></div>
+        <div class="k">Stop</div><div class="dn">${fmt(o.stop)} <span class="mut">(a ${toStop.toFixed(2).replace('.', ',')} %)${o.be ? ' · en entrada' : ''}</span></div>
+        ${o.tp ? `<div class="k">Objetivo</div><div class="up">${fmt(o.tp)} <span class="mut">(${toTp >= 0 ? 'a ' + toTp.toFixed(2).replace('.', ',') + ' %' : 'superado'})</span></div>` : ''}
+        <div class="k">Liquidación aprox.</div><div class="warn">${notional <= cu ? '<span class="mut">sin riesgo de liquidación (expones menos que tu capital)</span>' : `${fmt(liq)} <span class="mut">(a ${(Math.abs(liq / (p || o.entry) - 1) * 100).toFixed(1).replace('.', ',')} %: ahí pierdes tus ${fmt(cu)} $)</span>`}</div>
+      </div>${todo}
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        ${o.be ? '' : `<button class="sec" data-pact="be" data-id="${o.id}">Stop a la entrada</button>`}
+        ${o.half ? '' : `<button class="sec" data-pact="half" data-id="${o.id}">He cerrado la mitad</button>`}
+        <div><label>Precio de salida</label><input class="pc-exit" data-id="${o.id}" type="number" placeholder="${p ? Math.round(p) : ''}" style="width:100px"></div>
+        <button data-pact="close" data-id="${o.id}">He cerrado la operación</button>
+      </div></div>`;
+  }).join('');
+  // diario
+  const L = POS.log.filter(x => !x.parcial || true);
+  if (!L.length) { $('posLog').innerHTML = ''; return; }
+  const res = L.map(x => ({ x, pnl: (x.exit - x.entry) * x.side * x.qty, R: Math.abs(x.entry - x.stop0) * x.qty }));
+  const tot = res.reduce((a, y) => a + y.pnl, 0), wins = res.filter(y => y.pnl > 0).length;
+  $('posLog').innerHTML = `<details ${SIMPLE ? '' : 'open'}><summary><b>Mi diario:</b> ${res.length} cierres · ${wins} con ganancia · total <span class="${tot >= 0 ? 'up' : 'dn'}">${tot >= 0 ? '+' : ''}${fmt(tot / (S.fx || 1), 2)} ${cur}</span></summary>
+    <table><tr><th>Fecha</th><th>Lado</th><th class="r">Entrada</th><th class="r">Salida</th><th class="r">Resultado</th><th class="r">R</th></tr>` +
+    res.slice(0, 30).map(y => `<tr><td>${tstr(y.x.tOut)}${y.x.parcial ? ' <span class="mut">(mitad)</span>' : ''}</td><td>${y.x.side === 1 ? 'Largo' : 'Corto'}</td><td class="r">${fmt(y.x.entry)}</td><td class="r">${fmt(y.x.exit)}</td><td class="r ${y.pnl >= 0 ? 'up' : 'dn'}">${y.pnl >= 0 ? '+' : ''}${fmt(y.pnl / (S.fx || 1), 2)}</td><td class="r">${y.R ? (y.pnl / y.R).toFixed(2).replace('.', ',') : '—'}</td></tr>`).join('') + '</table></details>';
+}
+setTimeout(() => { posRender(); setInterval(posRender, 5000); }, 0);
+
+// ---------- Ahora mismo: precio en directo, niveles y probabilidades medidas ----------
+const NOW = { p: null, at: 0, hist: null, histAt: 0 };
+function nowWs() {
+  let ws; try { ws = new WebSocket('wss://stream.bybit.com/v5/public/linear'); } catch (e) { return; }
+  ws.onopen = () => { ws.send(JSON.stringify({ op: 'subscribe', args: ['tickers.BTCUSDT', 'publicTrade.BTCUSDT'] })); ws._p = setInterval(() => { try { ws.send('{"op":"ping"}'); } catch (e) {} }, 20000); };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.topic === 'tickers.BTCUSDT' && m.data) { Object.assign(LIVE.tk, m.data); if (m.data.lastPrice) { NOW.p = +m.data.lastPrice; NOW.at = Date.now(); nowTick(); } } else if (m.topic === 'publicTrade.BTCUSDT' && Array.isArray(m.data)) liveTrades(m.data); };
+  ws.onclose = () => { clearInterval(ws._p); setTimeout(nowWs, 5000); };
+}
+let nowLast = 0;
+function nowTick() { // precio cada segundo; el resto de la tarjeta, cada 15 s
+  const el = $('nowPrice'); if (el && NOW.p) { const prev = +el.dataset.p || NOW.p; el.textContent = fmt(NOW.p, 1); el.className = NOW.p >= prev ? 'up' : 'dn'; el.dataset.p = NOW.p; }
+  $('nowLive').textContent = NOW.at ? '● en directo · ' + new Date(NOW.at).toLocaleTimeString('es-ES') : '';
+  if (Date.now() - nowLast > 15000) { nowLast = Date.now(); nowRender(); }
+  if (POS.open.length && Date.now() - (window.__posT || 0) > 2000) { window.__posT = Date.now(); posRender(); }
+}
+async function nowHist() { // 3.000 velas de 1h (unos 4 meses) para medir probabilidades; se renueva cada hora
+  if (NOW.hist && Date.now() - NOW.histAt < 60 * 60e3) return NOW.hist;
+  let all = S.data ? S.data.h1.slice() : await klines('60', 1000), end = all[0].t - 1;
+  for (let r = 0; r < 2; r++) {
+    const j = await (await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=60&limit=1000&end=${end}`)).json();
+    const x = j.result.list.map(q => ({ t: +q[0], o: +q[1], h: +q[2], l: +q[3], c: +q[4] })).reverse(); if (!x.length) break;
+    all = x.concat(all); end = x[0].t - 1;
+  }
+  NOW.hist = all; NOW.histAt = Date.now(); return all;
+}
+// De todas las velas del histórico: ¿cuántas veces el precio subió +up % antes de bajar −dn % (en 4 días como máximo)?
+function firstPass(all, up, dn, N = 96) {
+  let a = 0, b = 0;
+  for (let i = 0; i < all.length - N; i++) { const s0 = all[i].c; for (let j = i + 1; j < i + N; j++) { if (all[j].h >= s0 * (1 + up)) { a++; break; } if (all[j].l <= s0 * (1 - dn)) { b++; break; } } }
+  return a + b ? a / (a + b) : 0.5;
+}
+function nowLevels(p) {
+  const L = [];
+  const add = (v, txt) => { if (v && isFinite(v) && Math.abs(v / p - 1) > 0.002 && Math.abs(v / p - 1) < 0.08) L.push({ p: v, txt }); };
+  if (S.data) {
+    const t = S.data.tick; add(+t.highPrice24h, 'Máximo 24 h'); add(+t.lowPrice24h, 'Mínimo 24 h');
+    const em = (c, n) => E.ema(c.map(x => x.c), n).slice(-1)[0];
+    add(em(S.data.h1, 20), 'EMA20 1h'); add(em(S.data.h1, 200), 'EMA200 1h'); add(em(S.data.h4, 20), 'EMA20 4h'); add(em(S.data.h4, 50), 'EMA50 4h'); add(em(S.data.d1, 20), 'EMA20 diaria');
+    const h72 = S.data.h1.slice(-72); add(Math.max(...h72.map(x => x.h)), 'Máximo 3 días'); add(Math.min(...h72.map(x => x.l)), 'Mínimo 3 días');
+  }
+  const o = EW.nest && EW.nest.last; if (o) { add(o.invalida && o.invalida.p, 'Invalidación Elliott'); add(o.confirma && o.confirma.p, 'Confirmación Elliott'); }
+  for (let r = Math.floor(p / 1000) - 3; r <= Math.ceil(p / 1000) + 3; r++) add(r * 1000, 'Número redondo');
+  // agrupa niveles a menos de 0,25 % entre sí
+  L.sort((a, b) => a.p - b.p); const out = [];
+  for (const l of L) { const q = out[out.length - 1]; if (q && Math.abs(l.p / q.p - 1) < 0.0025) { if (!q.txt.includes(l.txt)) q.txt += ' · ' + l.txt; } else out.push({ ...l }); }
+  return { up: out.filter(l => l.p > p).slice(0, 3), dn: out.filter(l => l.p < p).reverse().slice(0, 3) };
+}
+async function nowRender() {
+  const p = NOW.p || (S.data ? +S.data.tick.lastPrice : null); if (!p) return;
+  let all; try { all = await nowHist(); } catch (e) { all = S.data ? S.data.h1 : null; }
+  const lv = nowLevels(p), t = S.data ? S.data.tick : null;
+  const h1 = S.data ? S.data.h1 : null, ch1 = h1 ? (p / h1[h1.length - 2].c - 1) * 100 : 0, ch24 = t ? +t.price24hPcnt * 100 : 0;
+  let tbl = '';
+  if (all && lv.up.length && lv.dn.length) {
+    tbl = `<table class="small" style="margin-top:8px"><tr><th>Si sube a… / si baja a…</th>${lv.dn.map(d => `<th class="r dn">${fmt(d.p)}<br><span class="mut" style="font-weight:400">${d.txt}</span></th>`).join('')}</tr>` +
+      lv.up.map(u => `<tr><td class="up"><b>${fmt(u.p)}</b> <span class="mut">${u.txt}</span></td>${lv.dn.map(d => { const pr = firstPass(all, u.p / p - 1, 1 - d.p / p); return `<td class="r"><b class="${pr >= 0.5 ? 'up' : 'dn'}">${Math.round(pr * 100)} %</b> sube antes</td>`; }).join('')}</tr>`).join('') + '</table>' +
+      `<div class="mut small" style="margin-top:4px">Cada casilla: de todas las veces que BTC estuvo a esas mismas distancias en los últimos ${Math.round(all.length / 24 / 30)} meses (velas de 1h), en qué % llegó antes al nivel de arriba que al de abajo (plazo máximo 4 días). Es lo que ha pasado, no una predicción: depende sobre todo de la distancia a cada nivel.</div>`;
+  }
+  const a = NOW.p ? '' : '<span class="mut small">(último dato del minuto)</span>';
+  $('nowBox').innerHTML = `<div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap">
+      <div style="font-size:30px;font-weight:700;font-variant-numeric:tabular-nums"><span id="nowPrice" data-p="${p}">${fmt(p, 1)}</span> ${a}</div>
+      <div class="${ch1 >= 0 ? 'up' : 'dn'}">1h ${ch1 >= 0 ? '+' : ''}${ch1.toFixed(2).replace('.', ',')} %</div>
+      <div class="${ch24 >= 0 ? 'up' : 'dn'}">24h ${ch24 >= 0 ? '+' : ''}${ch24.toFixed(2).replace('.', ',')} %</div>
+      ${t ? `<div class="mut">Rango 24h ${fmt(+t.lowPrice24h)} – ${fmt(+t.highPrice24h)}</div>` : ''}
+    </div>
+    <div class="ewgrid" style="margin-top:8px">
+      <div><b class="up">Niveles por encima</b><br>${lv.up.map(l => `${fmt(l.p)} <span class="mut">(+${((l.p / p - 1) * 100).toFixed(1).replace('.', ',')} %) ${l.txt}</span>`).join('<br>') || '—'}</div>
+      <div><b class="dn">Niveles por debajo</b><br>${lv.dn.map(l => `${fmt(l.p)} <span class="mut">(−${((1 - l.p / p) * 100).toFixed(1).replace('.', ',')} %) ${l.txt}</span>`).join('<br>') || '—'}</div>
+    </div>${tbl}`;
+}
+nowWs(); setInterval(() => { if (!NOW.at || Date.now() - NOW.at > 30000) nowRender(); }, 60e3);
+
+
+
+// ---------- En directo: flujo de órdenes, liquidaciones, interés abierto y registro de cambios ----------
+const LIVE = { tk: {}, tr: [], px: [], oi: [], feed: store.get('liveFeed', []).filter(e => Date.now() - e.t < 12 * 3600e3), st: {} };
+$('liveSnd').checked = store.get('liveSnd', false); $('liveSnd').addEventListener('change', () => store.set('liveSnd', $('liveSnd').checked));
+function liveTrades(arr) {
+  for (const x of arr) {
+    const usd = +x.v * +x.p, t = +x.T, buy = x.S === 'Buy';
+    LIVE.tr.push({ t, buy, usd });
+    if (usd >= 1e6) liveEv(buy ? 'up' : 'dn', `🐋 Orden grande: ${buy ? 'COMPRA' : 'VENTA'} a mercado de ${fmt(usd / 1e6, 1)} M$ a ${fmt(+x.p)}`, usd >= 3e6);
+  }
+}
+function liveEv(cls, txt, loud) {
+  const k = txt.replace(/[0-9.,]+/g, '#'); if (LIVE.st['ev' + k] && Date.now() - LIVE.st['ev' + k] < 20000) return; LIVE.st['ev' + k] = Date.now(); // sin repetir lo mismo en 20 s
+  LIVE.feed.unshift({ t: Date.now(), cls, txt }); LIVE.feed = LIVE.feed.slice(0, 80); store.set('liveFeed', LIVE.feed);
+  if (loud && $('liveSnd').checked && audioCtx) beep();
+  liveFeedRender();
+}
+function liveFeedRender() {
+  $('liveFeed').innerHTML = LIVE.feed.map(e => `<div style="padding:2px 0;border-bottom:1px solid #21262d"><span class="mut">${new Date(e.t).toLocaleTimeString('es-ES')}</span> <span class="${e.cls}">${e.txt}</span></div>`).join('') || '<span class="mut">Aún sin cambios.</span>';
+}
+function liveWin(ms) { const t0 = Date.now() - ms; let b = 0, s = 0, big = 0; for (let i = LIVE.tr.length - 1; i >= 0 && LIVE.tr[i].t >= t0; i--) { const x = LIVE.tr[i]; if (x.buy) b += x.usd; else s += x.usd; if (x.usd >= 250e3) big += x.buy ? 1 : -1; } return { b, s, d: b - s, pb: b + s ? b / (b + s) : 0.5, big }; }
+function pxAgo(ms) { const t0 = Date.now() - ms; for (const x of LIVE.px) if (x.t >= t0) return x.p; return null; }
+function oiAgo(ms) { const t0 = Date.now() - ms; for (const x of LIVE.oi) if (x.t >= t0) return x.v; return null; }
+function liveRender() {
+  const now = Date.now(), p = NOW.p; if (!p) return;
+  LIVE.tr = LIVE.tr.filter(x => now - x.t < 15 * 60e3);
+  LIVE.px.push({ t: now, p }); LIVE.px = LIVE.px.filter(x => now - x.t < 65 * 60e3);
+  const oiV = +LIVE.tk.openInterestValue; if (oiV) { LIVE.oi.push({ t: now, v: oiV }); LIVE.oi = LIVE.oi.filter(x => now - x.t < 65 * 60e3); }
+  const ch = ms => { const a = pxAgo(ms); return a ? (p / a - 1) * 100 : null; };
+  const c1 = ch(60e3), c5 = ch(5 * 60e3), c15 = ch(15 * 60e3), c60 = ch(60 * 60e3);
+  const w1 = liveWin(60e3), w5 = liveWin(5 * 60e3), w15 = liveWin(15 * 60e3);
+  const liq = (typeof CAP !== 'undefined' ? CAP.liq : []).filter(x => now - x.t < 5 * 60e3), lL = liq.filter(x => x.long).reduce((a, x) => a + x.usd, 0), lS = liq.filter(x => !x.long).reduce((a, x) => a + x.usd, 0);
+  const o5 = oiAgo(5 * 60e3), o60 = oiAgo(60 * 60e3), oc5 = o5 && oiV ? (oiV / o5 - 1) * 100 : null, oc60 = o60 && oiV ? (oiV / o60 - 1) * 100 : null;
+  const fr = +LIVE.tk.fundingRate;
+  const pc = v => v == null ? '<span class="mut">—</span>' : `<b class="${v >= 0 ? 'up' : 'dn'}">${v >= 0 ? '+' : ''}${v.toFixed(2).replace('.', ',')} %</b>`;
+  const bar = w => { const b = Math.round(w.pb * 100); return `<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin:2px 0"><div style="width:${b}%;background:#3fb950"></div><div style="width:${100 - b}%;background:#e5534b"></div></div><span class="small">${b} % compras · neto <b class="${w.d >= 0 ? 'up' : 'dn'}">${w.d >= 0 ? '+' : '−'}${fmt(Math.abs(w.d) / 1e6, 1)} M$</b></span>`; };
+  // lectura en una frase
+  let lect;
+  if (oc5 != null && c5 != null) {
+    if (c5 < -0.15 && oc5 > 0.1) lect = '⬇️ Baja y entran posiciones nuevas: cortos abriendo (presión bajista con fuerza).';
+    else if (c5 < -0.15 && oc5 < -0.1) lect = '⬇️ Baja y se cierran posiciones: largos saliendo o liquidados (puede agotarse pronto).';
+    else if (c5 > 0.15 && oc5 > 0.1) lect = '⬆️ Sube y entran posiciones nuevas: compras con convicción.';
+    else if (c5 > 0.15 && oc5 < -0.1) lect = '⬆️ Sube porque cierran cortos (rebote por cierre de cortos, suele ser corto).';
+    else lect = w5.pb > 0.56 ? '↔️ Precio quieto pero dominan las compras.' : w5.pb < 0.44 ? '↔️ Precio quieto pero dominan las ventas.' : '↔️ Mercado equilibrado, sin dirección clara en 5 min.';
+  } else lect = 'Recogiendo datos (5 min para la lectura completa)…';
+  $('liveBox').innerHTML = `<div class="big" style="font-size:15px">${lect}</div>
+   <div class="ewgrid" style="margin-top:8px">
+    <div><b>Precio</b> ${fmt(p, 1)}<br>1 min ${pc(c1)} · 5 min ${pc(c5)}<br>15 min ${pc(c15)} · 1 h ${pc(c60)}</div>
+    <div><b>Quién empuja (órdenes a mercado)</b><br>1 min: ${bar(w1)}<br>5 min: ${bar(w5)}</div>
+    <div><b>Liquidaciones 5 min</b><br>largos <b class="dn">${fmt(lL / 1e6, 2)} M$</b> · cortos <b class="up">${fmt(lS / 1e6, 2)} M$</b><br><b>Órdenes ≥ 250 k$ (15 min)</b>: ${w15.big >= 0 ? '<span class="up">+' : '<span class="dn">'}${w15.big}</span> (compras − ventas)</div>
+    <div><b>Interés abierto</b> ${oiV ? fmt(oiV / 1e9, 2) + ' mil M$' : '—'}<br>5 min ${pc(oc5)} · 1 h ${pc(oc60)}<br><b>Funding</b> ${isFinite(fr) ? `<b class="${fr < 0 ? 'up' : ''}">${(fr * 100).toFixed(4).replace('.', ',')} %</b>` : '—'}</div>
+   </div>`;
+  // ---- detección de cambios ----
+  const S0 = LIVE.st;
+  if (c1 != null && Math.abs(c1) >= 0.3) liveEv(c1 > 0 ? 'up' : 'dn', `${c1 > 0 ? '🚀 Subida' : '💥 Caída'} rápida: ${c1 > 0 ? '+' : ''}${c1.toFixed(2).replace('.', ',')} % en 1 minuto (${fmt(p)})`, true);
+  if (S0.p) { const lv = nowLevels(S0.p); for (const l of lv.up) if (S0.p < l.p && p >= l.p) liveEv('up', `⬆️ Supera ${fmt(l.p)} (${l.txt})`, true); for (const l of lv.dn) if (S0.p > l.p && p <= l.p) liveEv('dn', `⬇️ Pierde ${fmt(l.p)} (${l.txt})`, true); }
+  const hi = +LIVE.tk.highPrice24h, lo = +LIVE.tk.lowPrice24h;
+  if (S0.lo && lo && lo < S0.lo) liveEv('dn', `📉 Nuevo mínimo de 24 h: ${fmt(lo)}`, false); if (S0.hi && hi && hi > S0.hi) liveEv('up', `📈 Nuevo máximo de 24 h: ${fmt(hi)}`, false);
+  if (lL >= 3e6 && !(S0.liqL >= 3e6)) liveEv('dn', `🔥 Ola de liquidaciones de largos: ${fmt(lL / 1e6, 1)} M$ en 5 min`, true);
+  if (lS >= 3e6 && !(S0.liqS >= 3e6)) liveEv('up', `🔥 Ola de liquidaciones de cortos: ${fmt(lS / 1e6, 1)} M$ en 5 min`, true);
+  const dom = w5.b + w5.s > 5e6 ? (w5.pb >= 0.58 ? 'C' : w5.pb <= 0.42 ? 'V' : 'N') : S0.dom;
+  if (S0.dom && dom !== S0.dom && dom !== 'N') liveEv(dom === 'C' ? 'up' : 'dn', dom === 'C' ? `🟢 Cambian las tornas: dominan las COMPRAS (${Math.round(w5.pb * 100)} % en 5 min)` : `🔴 Cambian las tornas: dominan las VENTAS (${Math.round((1 - w5.pb) * 100)} % en 5 min)`, true);
+  if (isFinite(fr) && isFinite(S0.fr) && Math.sign(fr) !== Math.sign(S0.fr) && fr !== 0) liveEv(fr < 0 ? 'up' : 'dn', `Funding pasa a ${fr < 0 ? 'NEGATIVO' : 'positivo'} (${(fr * 100).toFixed(4).replace('.', ',')} %)`, true);
+  if (oc5 != null && Math.abs(oc5) >= 0.8 && !(Math.abs(S0.oc5 || 0) >= 0.8)) liveEv(oc5 > 0 ? 'warn' : 'mut', `Interés abierto ${oc5 > 0 ? 'sube' : 'baja'} ${Math.abs(oc5).toFixed(1).replace('.', ',')} % en 5 min (${oc5 > 0 ? 'entra apalancamiento' : 'se cierran posiciones'})`, false);
+  Object.assign(S0, { p, hi, lo, liqL: lL, liqS: lS, dom, fr: isFinite(fr) ? fr : S0.fr, oc5 });
+  // otros módulos: capitulación y Elliott
+  if (typeof CAP !== 'undefined' && CAP.n !== S0.capN) { if (S0.capN != null) liveEv(CAP.n > S0.capN ? 'up' : 'mut', `🧯 Capitulación: ${CAP.n}/4 condiciones (antes ${S0.capN}/4)`, CAP.n >= 3); S0.capN = CAP.n; }
+  const eo = typeof ewShown === 'function' ? ewShown() : null;
+  if (eo) { const k = eo.nombre + ' ' + eo.points.filter(q => q.lab && q.lab !== '0').map(q => q.lab).join('-'); if (S0.ew && S0.ew !== k) liveEv('warn', `🌊 Elliott (${TFNAME[EW.tf]}) cambia: ${S0.ew} → ${k}`, false); S0.ew = k;
+    const tg = ewTargets(eo, p).find(t => !t.hit); const tk = tg ? Math.round(tg.p) : 0; if (S0.ewT && tk !== S0.ewT) liveEv('up', `🎯 Elliott: objetivo ${fmt(S0.ewT)} alcanzado → siguiente ${tg ? fmt(tg.p) : '—'}`, true); S0.ewT = tk; }
+}
+liveFeedRender(); setInterval(liveRender, 1000);
+
+// ---------- Detector de capitulación: 4 condiciones, aviso cuando se cumplen todas ----------
+const CAP = { liq: [], n: 0, firedKey: store.get('capFired', '') };
+$('capSweep').value = store.get('capSweep', 70870); $('capReclaim').value = store.get('capReclaim', 72700);
+['capSweep', 'capReclaim'].forEach(id => $(id).addEventListener('change', () => { store.set(id, +$(id).value); capRun(); }));
+function capLiqWs() { // liquidaciones en directo (Bybit): «Buy» = largo liquidado
+  let ws; try { ws = new WebSocket('wss://stream.bybit.com/v5/public/linear'); } catch (e) { return; }
+  ws.onopen = () => { ws.send(JSON.stringify({ op: 'subscribe', args: ['allLiquidation.BTCUSDT'] })); ws._p = setInterval(() => { try { ws.send('{"op":"ping"}'); } catch (e) {} }, 20000); };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.topic === 'allLiquidation.BTCUSDT' && Array.isArray(m.data)) for (const x of m.data) CAP.liq.push({ t: +x.T, long: x.S === 'Buy', usd: +x.v * +x.p }); };
+  ws.onclose = () => { clearInterval(ws._p); setTimeout(capLiqWs, 5000); };
+}
+async function capRun() {
+  if (!S.data) return;
+  try {
+    const sweepLv = +$('capSweep').value, reclaimLv = +$('capReclaim').value, now = Date.now();
+    const m15 = await klines('15', 200), h1 = S.data.h1, tick = S.data.tick;
+    const rsi1 = E.computeIndicators(h1).rsi, rsiMin = Math.min(...rsi1.slice(-24).filter(isFinite));
+    // 1) barrida: vela de 15m en las últimas 24 h que perfora el nivel, con mecha larga abajo y volumen ≥ 2,5× la media
+    let sweep = null;
+    for (let i = Math.max(20, m15.length - 96); i < m15.length; i++) {
+      const b = m15[i], rng = b.h - b.l; if (!(b.l < sweepLv) || rng <= 0) continue;
+      const wick = (Math.min(b.o, b.c) - b.l) / rng, avg = m15.slice(i - 20, i).reduce((a, x) => a + x.v, 0) / 20, vx = b.v / avg;
+      const cand = { t: b.t, l: b.l, wick, vx, ok: wick >= 0.45 && vx >= 2.5 };
+      if (!sweep || (cand.ok && !sweep.ok) || (cand.ok === sweep.ok && b.l < sweep.l)) sweep = cand;
+    }
+    // 2) recuperación: cierre de 1h por encima del nivel DESPUÉS de la barrida
+    const closed = h1.slice(0, -1), sweepH = sweep ? Math.floor(sweep.t / 3600e3) * 3600e3 : 0;
+    const rec = sweep && sweep.ok ? closed.find(x => x.t >= sweepH && x.c > reclaimLv) : null, recOk = !!rec;
+    // 3) funding negativo · 4) sobreventa
+    const fr = +tick.fundingRate, frOk = fr < 0, rsiOk = rsiMin < 25;
+    CAP.liq = CAP.liq.filter(x => now - x.t < 3600e3);
+    const liqL = CAP.liq.filter(x => x.long).reduce((a, x) => a + x.usd, 0), liqS = CAP.liq.filter(x => !x.long).reduce((a, x) => a + x.usd, 0);
+    const conds = [
+      { ok: rsiOk, t: 'Sobreventa extrema (RSI 1h < 25 en las últimas 24 h)', v: `mínimo ${fmt(rsiMin, 0)}` },
+      { ok: !!(sweep && sweep.ok), t: `Barrida bajo ${fmt(sweepLv)} con mecha larga y volumen alto (vela 15m)`, v: sweep ? `mín. ${fmt(sweep.l)} · mecha ${Math.round(sweep.wick * 100)} % · volumen ${fmt(sweep.vx, 1)}× la media` : 'aún no ha perforado el nivel' },
+      { ok: frOk, t: 'Funding negativo (los largos apalancados ya han salido)', v: `${(fr * 100).toFixed(4).replace('.', ',')} %` },
+      { ok: recOk, t: `Cierre de 1h por encima de ${fmt(reclaimLv)} tras la barrida`, v: recOk ? `cerró ${fmt(rec.c)}` : `último cierre ${fmt(closed[closed.length - 1].c)}` }
+    ];
+    const n = conds.filter(c => c.ok).length;
+    $('capAt').textContent = 'revisado ' + new Date().toLocaleTimeString('es-ES');
+    $('capBox').innerHTML = `<div class="big ${n === 4 ? 'up' : n === 3 ? 'warn' : 'mut'}">${n === 4 ? '🟢 CAPITULACIÓN CONFIRMADA (4/4)' : n + '/4 condiciones — ' + (n === 3 ? 'cerca, falta una' : 'todavía no')}</div>
+      <div class="lines" style="margin-top:6px">${conds.map(c => `<div class="k">${c.ok ? '✅' : '❌'} ${c.t}</div><div class="mut">${c.v}</div>`).join('')}
+      <div class="k">ℹ️ Liquidaciones última hora (desde que abriste el panel)</div><div class="mut">largos ${fmt(liqL / 1e6, 1)} M$ · cortos ${fmt(liqS / 1e6, 1)} M$</div></div>
+      ${n === 4 ? `<div class="alert i" style="margin-top:8px">Las 4 a la vez = el final de la caída es creíble. Aun así: stop bajo el mínimo de la barrida (${fmt(sweep.l)}), y el tamaño lo marca «Tu dinero».</div>` : ''}
+      <div class="mut small" style="margin-top:6px">Condiciones de manual, no medidas con backtest en este panel: confirman, no adivinan.</div>`;
+    const key = sweep ? 'cap' + sweep.t : '';
+    if (n === 4 && key !== CAP.firedKey) {
+      CAP.firedKey = key; store.set('capFired', key);
+      capAlarm(); if (true) { try { if ('Notification' in window && Notification.permission === 'granted') new Notification('🟢 BTC: capitulación confirmada (4/4)', { body: `Barrida a ${fmt(sweep.l)} y cierre sobre ${fmt(reclaimLv)}. Stop bajo ${fmt(sweep.l)}.` }); } catch (e) {} }
+      let on = false; clearInterval(flashTimer); flashTimer = setInterval(() => { document.title = (on = !on) ? '🟢 CAPITULACIÓN BTC' : 'BTC Alertas'; }, 900); setTimeout(() => { clearInterval(flashTimer); document.title = 'BTC Alertas'; }, 120000);
+    } else if (n === 3 && CAP.n < 3) capBeep(1);
+    CAP.n = n;
+  } catch (e) { $('capBox').innerHTML = `<p class="mut">Sin datos ahora (${e.message}). Reintento en 1 min.</p>`; }
+}
+function capBeep(k) { if (!audioCtx) return; for (let r = 0; r < k; r++) setTimeout(beep, r * 2000); }
+function capAlarm() { capBeep(5); }
+function capSndState() { $('capSnd').textContent = audioCtx && audioCtx.state === 'running' ? '🔊 Sonido activado' : '🔇 Activar sonido (pulsa)'; $('capSnd').className = audioCtx && audioCtx.state === 'running' ? 'sec small' : 'small'; }
+$('capSnd').addEventListener('click', async () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); await audioCtx.resume(); beep(); } catch (e) {} capSndState(); });
+$('capTest').addEventListener('click', async () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); await audioCtx.resume(); } catch (e) {} capSndState(); capAlarm(); });
+setTimeout(capSndState, 500);
+capLiqWs(); setTimeout(capRun, 3000); setInterval(capRun, 60e3);
+
+// ---------- Gráfico TradingView ----------
+function tvLoad(tf) {
+  const studies = 'MACD%40tv-basicstudies%1FStochasticRSI%40tv-basicstudies';
+  const url = `https://s.tradingview.com/widgetembed/?symbol=BYBIT%3ABTCUSDT.P&interval=${tf}&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=161b22&studies=${studies}&theme=dark&style=1&timezone=Europe%2FMadrid&withdateranges=1&locale=es`;
+  $('tvBox').innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:0;border-radius:8px" allowtransparency="true" allowfullscreen></iframe>`;
+}
+document.querySelectorAll('#tvTf button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#tvTf button').forEach(x => x.classList.remove('on')); b.classList.add('on'); tvLoad(b.dataset.tf);
+}));
+tvLoad('60');
+
+// ---------- Elliott en tiempo real (WebSocket de Bybit) ----------
+let WS = null, wsTf = null, wsDraw = 0;
+function wsConnect() {
+  if (WS && wsTf === EW.tf && WS.readyState <= 1) return;
+  try { if (WS) WS.close(); } catch (e) {}
+  wsTf = EW.tf;
+  try { WS = new WebSocket('wss://stream.bybit.com/v5/public/linear'); } catch (e) { return; }
+  WS.onopen = () => { WS.send(JSON.stringify({ op: 'subscribe', args: [`kline.${wsTf}.BTCUSDT`] })); WS._ping = setInterval(() => { try { WS.send('{"op":"ping"}'); } catch (e) {} }, 20000); };
+  WS.onclose = () => { clearInterval(WS && WS._ping); setTimeout(() => { if (wsTf === EW.tf) { WS = null; wsConnect(); } }, 5000); };
+  WS.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (!m.topic || !m.data || m.topic !== `kline.${EW.tf}.BTCUSDT` || !EW.cAll) return;
+    const k = m.data[m.data.length - 1], bar = { t: +k.start, o: +k.open, h: +k.high, l: +k.low, c: +k.close, v: +k.volume };
+    EW.wsPrice = bar.c; EW.wsAt = Date.now(); EW.wsBar = bar;
+    const last = EW.cAll[EW.cAll.length - 1];
+    if (bar.t === last.t) { Object.assign(last, bar); if (LW.candle) try { LW.candle.update({ time: tsec(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c }); } catch (e) {} }
+    else if (bar.t > last.t) { EW.cAll.push(Object.assign({}, bar)); if (EW.trig !== bar.t) { EW.trig = bar.t; setTimeout(() => runElliott(true), 1500); } } // vela nueva: recalcula el recuento
+    if (Date.now() - wsDraw > 1000) { wsDraw = Date.now(); renderElliott(); ewTrigger(bar.c); }
+  };
+}
+
+// ---------- Instituciones: empresas y gobiernos (CoinGecko, tesorerías públicas) ----------
+const CG = 'https://api.coingecko.com/api/v3';
+const GOVS = { 'united-states': 'Estados Unidos', 'china': 'China', 'united-kingdom': 'Reino Unido', 'bulgaria': 'Bulgaria', 'bhutan': 'Bután', 'el-salvador': 'El Salvador', 'north-korea': 'Corea del Norte', 'united-arab-emirates': 'Emiratos Árabes Unidos', 'finland': 'Finlandia', 'germany': 'Alemania', 'venezuela': 'Venezuela', 'texas': 'Texas (EE. UU.)', 'roswell-new-mexico': 'Roswell, Nuevo México' };
+const IN = { st: store.get('inst', null), busy: false, prog: '' };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function cg(path, tries = 3) { // la API gratuita limita las consultas: espaciado y reintentos
+  for (let k = 0; k < tries; k++) {
+    try { const r = await fetch(CG + path); if (r.ok) return await r.json(); } catch (e) {}
+    await sleep(20000 + k * 20000);
+  }
+  throw new Error('CoinGecko no responde (límite de consultas). Se reintentará más tarde.');
+}
+async function inLoad(force) {
+  if (IN.busy) return; if (!force && IN.st && Date.now() - IN.st.t < 12 * H) return inRender();
+  IN.busy = true;
+  try {
+    const st = { t: Date.now(), comp: [], gov: [], moves: [] };
+    IN.prog = 'empresas'; inRender();
+    const cj = await cg('/companies/public_treasury/bitcoin'); await sleep(6500);
+    st.comp = cj.companies.slice(0, 25).map(c => ({ name: c.name, sym: c.symbol, country: c.country, btc: c.total_holdings, entry: c.total_entry_value_usd, pct: c.percentage_of_total_supply }));
+    st.totComp = cj.total_holdings;
+    const ents = await cg('/entities/list?entity_type=company&per_page=250'); await sleep(6500);
+    const idOf = Object.fromEntries(ents.map(e => [e.name.toLowerCase(), e.id]));
+    const targets = st.comp.slice(0, 10).map(c => ({ id: idOf[c.name.toLowerCase()], name: c.name, kind: 'Empresa' })).filter(x => x.id)
+      .concat(Object.entries(GOVS).map(([id, name]) => ({ id, name, kind: 'Gobierno' })));
+    let k = 0;
+    for (const tg of targets) {
+      k++; IN.prog = `${k}/${targets.length}: ${tg.name}`; inRender();
+      try {
+        const tx = (await cg(`/public_treasury/${tg.id}/transaction_history`)).transactions || [];
+        const btcTx = tx.filter(x => x.coin_id === 'bitcoin').sort((a, b) => b.date - a.date);
+        if (tg.kind === 'Gobierno') st.gov.push({ id: tg.id, name: tg.name, btc: btcTx[0] ? btcTx[0].holding_balance : null, last: btcTx[0] ? btcTx[0].date : null });
+        for (const x of btcTx.slice(0, 8)) st.moves.push({ who: tg.name, kind: tg.kind, date: x.date, type: x.type, btc: x.holding_net_change, usd: x.transaction_value_usd, bal: x.holding_balance, avg: x.average_entry_value_usd, src: x.source_url });
+      } catch (e) { if (tg.kind === 'Gobierno') st.gov.push({ id: tg.id, name: tg.name, btc: null }); }
+      IN.st = Object.assign({}, st, { partial: true }); await sleep(6500);
+    }
+    st.moves.sort((a, b) => b.date - a.date);
+    IN.st = st; store.set('inst', st);
+  } catch (e) { IN.err = e.message; }
+  IN.busy = false; IN.prog = ''; inRender();
+}
+function inRender() {
+  const st = IN.st;
+  if (!st) { $('inSum').innerHTML = IN.err ? `<div class="alert d">${IN.err}</div>` : `<p class="mut">Cargando ${IN.prog}… (la primera vez tarda 2–3 min)</p>`; return; }
+  const d30 = st.moves.filter(m => Date.now() - m.date < 30 * 24 * H);
+  const buy = d30.filter(m => m.btc > 0).reduce((a, m) => a + m.btc, 0), sell = -d30.filter(m => m.btc < 0).reduce((a, m) => a + m.btc, 0);
+  const govTot = st.gov.reduce((a, g) => a + (g.btc || 0), 0);
+  $('inSum').innerHTML = `<div class="big ${buy >= sell ? 'up' : 'dn'}">${buy >= sell ? '🟢 Últimos 30 días: más compras que ventas' : '🔴 Últimos 30 días: más ventas que compras'}</div>
+    <div class="lines">
+      <div class="k">Compras (30 d)</div><div class="up"><b>${fmt(buy)} BTC</b></div>
+      <div class="k">Ventas (30 d)</div><div class="dn"><b>${fmt(sell)} BTC</b></div>
+      <div class="k">Empresas tienen</div><div>${fmt(st.totComp || 0)} BTC</div>
+      <div class="k">Gobiernos tienen</div><div>${fmt(govTot)} BTC</div>
+    </div>${IN.busy ? `<div class="mut small">Actualizando ${IN.prog}…</div>` : `<div class="mut small">Actualizado ${new Date(st.t).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>`}`;
+  const mv = st.moves.slice().sort((a, b) => b.date - a.date).slice(0, SIMPLE ? 10 : 40);
+  $('inMoves').innerHTML = '<b>Últimos movimientos declarados</b>' + (mv.length ? `<table><tr><th>Fecha</th><th>Quién</th><th>Tipo</th><th>Movimiento</th><th class="r">BTC</th><th class="r">Valor</th><th class="r">Ahora tiene</th><th>Fuente</th></tr>` +
+    mv.map(m => `<tr><td>${new Date(m.date).toLocaleDateString('es-ES')}</td><td>${m.who}</td><td class="mut">${m.kind}</td><td class="${m.btc >= 0 ? 'up' : 'dn'}">${m.btc >= 0 ? 'Compra' : 'Venta'}</td><td class="r ${m.btc >= 0 ? 'up' : 'dn'}">${m.btc >= 0 ? '+' : ''}${fmt(m.btc)}</td><td class="r">${m.usd ? fmt(m.usd / 1e6) + ' M$' : '—'}</td><td class="r">${m.bal != null ? fmt(m.bal) : '—'}</td><td>${m.src ? `<a href="${m.src}" target="_blank" rel="noopener" style="color:#9cc3ff">ver</a>` : ''}</td></tr>`).join('') + '</table>' : '<p class="mut">Aún sin datos.</p>');
+  $('inComp').innerHTML = '<b>Empresas con más BTC</b><table><tr><th>Empresa</th><th class="r">BTC</th><th class="r">% del total</th><th class="r">Precio medio</th></tr>' +
+    st.comp.slice(0, SIMPLE ? 10 : 25).map(c => `<tr><td>${c.name} <span class="mut">${c.country || ''}</span></td><td class="r">${fmt(c.btc)}</td><td class="r">${(c.pct || 0).toFixed(2).replace('.', ',')} %</td><td class="r">${c.entry && c.btc ? fmt(c.entry / c.btc) : '—'}</td></tr>`).join('') + '</table>';
+  $('inGov').innerHTML = '<b>Gobiernos</b><table><tr><th>País</th><th class="r">BTC</th><th>Último cambio</th></tr>' +
+    st.gov.filter(g => g.btc != null).sort((a, b) => b.btc - a.btc).map(g => `<tr><td>${g.name}</td><td class="r">${fmt(g.btc)}</td><td class="mut">${g.last ? new Date(g.last).toLocaleDateString('es-ES') : '—'}</td></tr>`).join('') + '</table>';
+}
+$('inBtn').addEventListener('click', () => inLoad(true));
+setTimeout(() => inLoad(false), 4000); setInterval(() => inLoad(false), 60 * 60e3);
+
+// ---------- Ballenas (Hyperliquid) ----------
+const HL = 'https://api.hyperliquid.xyz/info';
+let WH = { pos: [], moves: store.get('whMoves', []), at: 0 };
+const short = a => a.slice(0, 6) + '…' + a.slice(-4);
+async function whAddrs() {
+  const c = store.get('whTop', null);
+  if (c && Date.now() - c.t < 24 * H) return c.list;
+  const rows = (await (await fetch('https://stats-data.hyperliquid.xyz/Mainnet/leaderboard')).json()).leaderboardRows;
+  const pf = (r, w) => +((r.windowPerformances.find(x => x[0] === w) || [0, { pnl: 0 }])[1].pnl);
+  const list = rows.filter(r => +r.accountValue > 5e6 && pf(r, 'allTime') > 0).sort((a, b) => pf(b, 'allTime') - pf(a, 'allTime')).slice(0, 40)
+    .map(r => ({ a: r.ethAddress, n: r.displayName || '', av: +r.accountValue, pnl: pf(r, 'allTime') }));
+  store.set('whTop', { t: Date.now(), list }); return list;
+}
+async function whLoad() {
+  try {
+    const addrs = await whAddrs();
+    const res = await Promise.all(addrs.map(async w => {
+      try {
+        const r = await (await fetch(HL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'clearinghouseState', user: w.a }) })).json();
+        const p = (r.assetPositions || []).map(x => x.position).find(x => x.coin === 'BTC');
+        return { ...w, szi: p ? +p.szi : 0, entry: p ? +p.entryPx : 0, liq: p && p.liquidationPx ? +p.liquidationPx : null, upnl: p ? +p.unrealizedPnl : 0, lev: p ? p.leverage.value : 0 };
+      } catch (e) { return null; }
+    }));
+    const now = res.filter(Boolean), prev = store.get('whPrev', null), price = S.data ? +S.data.tick.lastPrice : 0;
+    if (prev) {
+      const pm = Object.fromEntries(prev.map(x => [x.a, x.szi]));
+      for (const w of now) {
+        const before = pm[w.a] ?? 0, d = w.szi - before;
+        if (Math.abs(d) < 5) continue; // ignora cambios menores de 5 BTC
+        let txt;
+        if (before === 0) txt = `abrió ${w.szi > 0 ? 'LARGO' : 'CORTO'} de ${fmt(Math.abs(w.szi))} BTC`;
+        else if (w.szi === 0) txt = `cerró su ${before > 0 ? 'largo' : 'corto'} de ${fmt(Math.abs(before))} BTC`;
+        else if (Math.sign(w.szi) !== Math.sign(before)) txt = `giró de ${before > 0 ? 'largo' : 'corto'} a ${w.szi > 0 ? 'LARGO' : 'CORTO'} (${fmt(Math.abs(w.szi))} BTC)`;
+        else txt = `${Math.abs(w.szi) > Math.abs(before) ? 'aumentó' : 'redujo'} su ${w.szi > 0 ? 'largo' : 'corto'} en ${fmt(Math.abs(d))} BTC`;
+        WH.moves.unshift({ t: Date.now(), a: w.a, n: w.n, txt, buy: d > 0, btc: d, price });
+      }
+      WH.moves = WH.moves.slice(0, 40); store.set('whMoves', WH.moves);
+    }
+    store.set('whPrev', now.map(w => ({ a: w.a, szi: w.szi })));
+    WH.pos = now.filter(w => w.szi !== 0).sort((a, b) => Math.abs(b.szi) - Math.abs(a.szi)); WH.at = Date.now(); WH.err = null;
+  } catch (e) { WH.err = e.message; }
+  whRender();
+}
+function whRender() {
+  if (WH.err && !WH.pos.length) { $('whSum').innerHTML = `<div class="alert d">No se pudieron cargar las ballenas: ${WH.err}</div>`; return; }
+  const P = WH.pos, L = P.filter(w => w.szi > 0), Sh = P.filter(w => w.szi < 0);
+  const lb = L.reduce((s, w) => s + w.szi, 0), sb = -Sh.reduce((s, w) => s + w.szi, 0), net = lb - sb;
+  const day = WH.moves.filter(m => Date.now() - m.t < 24 * H), dNet = day.reduce((s, m) => s + m.btc, 0);
+  $('whSum').innerHTML = `<div class="big ${net >= 0 ? 'up' : 'dn'}">${net >= 0 ? '🟢 Las ballenas van en LARGO' : '🔴 Las ballenas van en CORTO'}</div>
+    <div class="lines">
+      <div class="k">En largo</div><div class="up"><b>${L.length}</b> ballenas · ${fmt(lb)} BTC</div>
+      <div class="k">En corto</div><div class="dn"><b>${Sh.length}</b> ballenas · ${fmt(sb)} BTC</div>
+      <div class="k">Últimas 24 h</div><div class="${dNet >= 0 ? 'up' : 'dn'}">${day.length ? (dNet >= 0 ? 'han comprado ' : 'han vendido ') + fmt(Math.abs(dNet)) + ' BTC' : 'sin movimientos aún'}</div>
+    </div>
+    <div class="mut small" style="margin-top:6px">Actualizado ${new Date(WH.at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} · cada 5 min</div>`;
+  const mv = WH.moves.slice(0, SIMPLE ? 5 : 20);
+  $('whMoves').innerHTML = '<b>Últimos movimientos</b>' + (mv.length ? '<ul>' + mv.map(m => `<li><span class="mut">${tstr(m.t)}</span> · ${m.n || short(m.a)} <span class="${m.buy ? 'up' : 'dn'}">${m.txt}</span>${m.price ? ` <span class="mut">(BTC a ${fmt(m.price)})</span>` : ''}</li>`).join('') + '</ul>'
+    : '<p class="mut">Se detectan comparando cada 5 minutos. El primero aparecerá en la próxima actualización con cambios.</p>');
+  const rows = P.slice(0, SIMPLE ? 6 : 40);
+  $('whTable').innerHTML = rows.length ? `<table><tr><th>Ballena</th><th>Lado</th><th class="r">BTC</th><th class="r">Entrada</th>${SIMPLE ? '' : '<th class="r">Apalanc.</th><th class="r">Liquidación</th><th class="r">Beneficio abierto</th><th class="r">Cuenta</th>'}</tr>` +
+    rows.map(w => `<tr><td>${w.n || short(w.a)}</td><td class="${w.szi > 0 ? 'up' : 'dn'}">${w.szi > 0 ? 'Largo' : 'Corto'}</td><td class="r">${fmt(Math.abs(w.szi))}</td><td class="r">${fmt(w.entry)}</td>${SIMPLE ? '' : `<td class="r">${w.lev}×</td><td class="r">${w.liq ? fmt(w.liq) : '—'}</td><td class="r ${w.upnl >= 0 ? 'up' : 'dn'}">${fmt(w.upnl / 1e3)} k$</td><td class="r">${fmt(w.av / 1e6)} M$</td>`}</tr>`).join('') + '</table>'
+    : '<p class="mut">Ninguna de estas ballenas tiene BTC abierto ahora.</p>';
+}
+$('whBtn').addEventListener('click', whLoad);
+whLoad(); setInterval(whLoad, 5 * 60e3);
+
+window.addEventListener('resize', () => { if (S.data) drawChart(); });
+load();
+setInterval(load, 60e3);
+if (alertsOn) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+})();
+</script>
+</body>
+</html>
