@@ -69,6 +69,11 @@
     <div id="nowBox"><p class="mut">Conectando…</p></div>
   </section>
 
+  <section class="card wide" id="rachaCard">
+    <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📏 Racha actual sin corrección grande</span><span id="rachaAt" class="small mut" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div id="rachaBox"><p class="mut">Cargando…</p></div>
+  </section>
+
   <section class="card wide" id="liveCard">
     <h2 style="display:flex;justify-content:space-between;align-items:center"><span>📡 Qué está pasando (cada segundo)</span><span class="small" style="text-transform:none;letter-spacing:0"><label><input type="checkbox" id="liveSnd"> pitido en cambios importantes</label></span></h2>
     <div id="liveBox"><p class="mut">Conectando…</p></div>
@@ -2481,6 +2486,65 @@ async function nowRender() {
 nowWs(); setInterval(() => { if (!NOW.at || Date.now() - NOW.at > 30000) nowRender(); }, 60e3);
 
 
+
+
+// ---------- Rachas: cuánto lleva el movimiento actual sin una corrección de X % y cómo se compara con la historia ----------
+function rachaLegs(c, X) {
+  const legs = []; let dir = 0, si = 0, sp = c[0].c, ext = c[0].c, ei = 0, maxC = 0;
+  for (let i = 1; i < c.length; i++) {
+    const b = c[i];
+    if (dir === 0) { if (b.h / sp - 1 >= X) { dir = 1; ext = b.h; ei = i; } else if (1 - b.l / sp >= X) { dir = -1; ext = b.l; ei = i; } continue; }
+    if (dir === 1) {
+      if (b.h > ext) { ext = b.h; ei = i; }
+      const r = 1 - b.l / ext;
+      if (r >= X) { legs.push({ dir, si, ei, sp, ep: ext, bars: ei - si, size: ext / sp - 1, maxC }); dir = -1; si = ei; sp = ext; ext = b.l; ei = i; maxC = 0; } else maxC = Math.max(maxC, r);
+    } else {
+      if (b.l < ext) { ext = b.l; ei = i; }
+      const r = b.h / ext - 1;
+      if (r >= X) { legs.push({ dir, si, ei, sp, ep: ext, bars: ei - si, size: ext / sp - 1, maxC }); dir = 1; si = ei; sp = ext; ext = b.h; ei = i; maxC = 0; } else maxC = Math.max(maxC, r);
+    }
+  }
+  const last = c[c.length - 1];
+  return { legs, cur: dir ? { dir, si, sp, ext, ei, bars: c.length - 1 - si, size: last.c / sp - 1, maxC, sinceExt: c.length - 1 - ei } : null };
+}
+function rachaConsec(c) { // velas seguidas del mismo color y qué pasó después en el histórico
+  const col = x => x.c >= x.o ? 1 : -1, n = c.length - 1; // la última vela está en curso: se cuentan las cerradas
+  let k = 0; const sg = col(c[n - 1]); for (let i = n - 1; i >= 0 && col(c[i]) === sg; i--) k++;
+  let tot = 0, rev = 0, longer = 0;
+  for (let i = k; i < n - 1; i++) { let ok = true; for (let j = i - k + 1; j <= i; j++) if (col(c[j]) !== sg) { ok = false; break; } if (!ok || col(c[i - k]) === sg) continue; tot++; if (col(c[i + 1]) !== sg) rev++; else longer++; }
+  return { k, sg, tot, rev };
+}
+function rachaRun() {
+  if (!S.data) return;
+  const d1 = S.data.d1, h4 = S.data.h4, price = NOW.p || +S.data.tick.lastPrice;
+  const cfg = [{ c: h4, X: 0.03, tf: '4h', u: 'velas de 4h', ms: 4 * H }, { c: d1, X: 0.05, tf: 'D', u: 'días', ms: 24 * H }, { c: d1, X: 0.10, tf: 'D', u: 'días', ms: 24 * H }, { c: d1, X: 0.15, tf: 'D', u: 'días', ms: 24 * H }];
+  const pc = v => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1).replace('.', ',')} %`;
+  let rows = '', worst = null;
+  for (const g of cfg) {
+    const { legs, cur } = rachaLegs(g.c, g.X); if (!cur) continue;
+    const same = legs.filter(l => l.dir === cur.dir), nL = same.length;
+    const pDur = nL ? same.filter(l => l.bars < cur.bars).length / nL : 0, pSize = nL ? same.filter(l => Math.abs(l.size) < Math.abs(cur.size)).length / nL : 0;
+    const p = Math.max(pDur, pSize), small = nL < 8; if (!small && (!worst || p > worst.p)) worst = { p, g, cur, nL };
+    const dur = g.tf === '4h' ? `${fmt(cur.bars * 4 / 24, 1)} días` : `${cur.bars} días`;
+    const need = cur.dir === -1 ? cur.ext * (1 + g.X) : cur.ext * (1 - g.X);
+    const tag = small ? `<span class="mut">pocas rachas para comparar (${nL})</span>` : p >= 0.9 ? '<b class="warn">EXTREMA</b>' : p >= 0.75 ? '<span class="warn">larga</span>' : '<span class="mut">normal</span>';
+    rows += `<tr><td>Sin ${cur.dir === -1 ? 'rebote' : 'corrección'} del ${g.X * 100} %</td><td class="${cur.dir === -1 ? 'dn' : 'up'}">${cur.dir === -1 ? '⬇️ bajando' : '⬆️ subiendo'} desde ${fmt(cur.sp)} (${tstr(g.c[cur.si].t)})</td><td class="r">${dur}</td><td class="r">${pc(cur.size)}</td><td class="r">${pc(cur.dir === -1 ? cur.maxC : -cur.maxC)}</td><td class="r">más larga que el ${Math.round(pDur * 100)} % · más profunda que el ${Math.round(pSize * 100)} %</td><td>${tag}</td><td class="r">${fmt(need)}</td></tr>`;
+  }
+  const cD = rachaConsec(S.data.d1), c4 = rachaConsec(S.data.h4);
+  const cons = (x, u) => `${x.k} ${u} ${x.sg === 1 ? 'verdes' : 'rojas'} seguidas${x.tot ? ` · pasó ${x.tot} veces antes; la siguiente fue ${x.sg === 1 ? 'roja' : 'verde'} el <b>${Math.round(x.rev / x.tot * 100)} %</b>` : ' · sin precedentes en estos datos'}`;
+  let head = '';
+  if (worst) {
+    const w = worst, dirTxt = w.cur.dir === -1 ? 'bajada' : 'subida', contra = w.cur.dir === -1 ? 'rebote' : 'corrección';
+    head = w.p >= 0.9 ? `<div class="big warn">⚠️ La ${dirTxt} actual es de las más extremas del histórico: más que el ${Math.round(w.p * 100)} % de las ${w.nL} anteriores sin un ${contra} del ${w.g.X * 100} %.</div><div class="small mut">Esto hace más probable un ${contra} pronto, pero <b>no dice cuándo</b>: las rachas extremas son justo las que siguen más de lo normal.</div>`
+      : w.p >= 0.75 ? `<div class="big">La ${dirTxt} actual ya es larga (más que el ${Math.round(w.p * 100)} % de las anteriores), aún no extrema.</div>`
+      : `<div class="big mut">La racha actual está dentro de lo normal: no hay sobreextensión que haga esperar un ${contra} inminente.</div>`;
+  }
+  $('rachaBox').innerHTML = head + `<table style="margin-top:8px"><tr><th>Racha</th><th>Desde</th><th class="r">Dura</th><th class="r">Movimiento</th><th class="r">Mayor ${'contramovimiento'}</th><th class="r">Frente al histórico</th><th></th><th class="r">Corrección si toca</th></tr>${rows}</table>
+    <div class="lines" style="margin-top:8px"><div class="k">Velas diarias</div><div>${cons(cD, 'velas diarias')}</div><div class="k">Velas de 4h</div><div>${cons(c4, 'velas de 4h')}</div></div>
+    <div class="mut small" style="margin-top:6px">«Corrección si toca» = precio al que el movimiento contrario llegaría al % de esa fila. Histórico: unos 2,7 años de velas diarias y 5,5 meses de 4h (Bybit). Medido, no es una predicción.</div>`;
+  $('rachaAt').textContent = 'actualizado ' + new Date().toLocaleTimeString('es-ES');
+}
+setTimeout(() => { rachaRun(); setInterval(rachaRun, 60e3); }, 4000);
 
 // ---------- En directo: flujo de órdenes, liquidaciones, interés abierto y registro de cambios ----------
 const LIVE = { tk: {}, tr: [], px: [], oi: [], feed: store.get('liveFeed', []).filter(e => Date.now() - e.t < 12 * 3600e3), st: {} };
