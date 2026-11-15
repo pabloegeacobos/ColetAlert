@@ -124,3 +124,20 @@ Prueba sin mirar al futuro con datos de Bybit: en cada vela se toma el recuento 
 - `build.py` — une los tres anteriores en `btc-alertas.html`.
 
 No es asesoramiento financiero.
+
+## Wyckoff (nuevo)
+
+Módulo `wyckoff.js` (se integra en el HTML con `build.py`). Lee el volumen **en BTC** (no en dólares), el rango de cada vela y dónde cierra.
+
+- **Eventos de acumulación:** SC (clímax de venta), AR (rebote automático), ST (test secundario), Spring, Test, SOS (señal de fuerza), LPS (último soporte).
+- **Eventos de distribución:** BC, AR, ST, UTAD, SOW y LPSY.
+- **Rupturas:** marca cuándo un rango falla.
+- **Fases A–E** con lo que se espera a continuación y un plan de entrada (spring/test, LPS, UTAD/LPSY).
+- **Esfuerzo frente a resultado:** absorción, falta de demanda y falta de oferta en la última vela, y quién domina el volumen en las últimas 20 velas.
+- **Dónde aparece:**
+  - Tarjeta 🧱 con Diario, 4h y 1h.
+  - Puntos y rango en el gráfico de Elliott (casilla «Wyckoff»).
+  - Una línea en la señal de compra/venta que dice si Wyckoff va a favor o en contra.
+  - Avisos en 📡 cuando aparece un evento nuevo.
+- **Tests:** `node tests/wyckoff.test.js` comprueba la acumulación completa, la distribución en espejo, el markdown sin clímax y un rango roto.
+- **Aviso:** es una lectura automática y sirve como contexto. No es una estrategia medida con backtest.
